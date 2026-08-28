@@ -1,0 +1,9 @@
+{
+  "asset": "takebook-kiosk.png",
+  "date": "2026-08-28",
+  "generator": "/opt/fleet/lib/gen-image.sh",
+  "deployment": "factory-image",
+  "use_case": "illustration-story",
+  "prompt": "Wide editorial cut-paper and gouache illustration for a browser piano practice takebook. Empty night-market music kiosk after rain, compact electric keyboard on a counter, two mismatched empty stools suggesting teacher and student, a single curling piano-roll receipt with abstract rectangular note blocks, cyan neon tubing, coral paper lantern, marigold task lamp, deep ink-blue shadows, tactile paper grain, three-quarter view, strong quiet negative space, warm humane mood. No people, no text, no letters, no numbers, no logos, no brands, no watermark, no screens showing an app, no gradients, no photorealism.",
+  "review": "Accepted: no people, text artifacts, brands, seams, or unintended symbols; two stools and abstract note roll accurately signal paired practice and saved takes."
+}

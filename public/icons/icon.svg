@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Takebook piano roll mark">
+  <rect width="512" height="512" rx="96" fill="#080b14"/>
+  <path d="M104 82h304v306c0 52-36 66-76 42l-76-45-76 45c-40 24-76 10-76-42V82Z" fill="#f7f1df"/>
+  <path d="M104 82h304v74H104z" fill="#36e5f5"/>
+  <g fill="#101523"><path d="M146 205h100v28H146zM274 205h58v28h-58zM190 260h142v28H190zM146 315h66v28h-66zM240 315h92v28h-92z"/></g>
+  <circle cx="368" cy="119" r="17" fill="#ff6f61"/>
+</svg>
