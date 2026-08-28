@@ -48,4 +48,14 @@ The static artifact is deployed with:
 /opt/fleet/lib/deploy-static.sh shared-piano-takebook /work/repo/dist
 ```
 
-Post-deployment verification results are recorded below after the deployment completes. The artifact class remains `pwa-offline`; no infrastructure, DNS, or billing configuration is committed in this repository.
+Deployment `602c84df-e88e-4a98-b963-8f1847d340db` succeeded to <https://shared-piano-takebook.sociobot.in> from the application-source revision `94ec8f0b929760529732c393bc4a958b69ae58ce`.
+
+Post-deployment checks passed:
+
+- `verify-url.sh`: HTTPS 200; 942 ms browser load; no console/page errors; title present; `lang="en"`; exactly one `h1`; one `main`; zero images missing `alt`; zero unnamed buttons.
+- Live artifact identity: all 24 public `dist/` files matched the served byte streams by SHA-256. `staticwebapp.config.json` is deployment configuration and is intentionally not a public artifact.
+- Live Playwright: 12 passed, 1 skipped (the synthetic worker-byte update scenario is deliberately local-only). This includes desktop keyboard use, the clear-notes confirmation/cancellation regression, 390px mobile, offline reload, privacy, and Axe serious/critical checks.
+- Live response policy: root HTML revalidates at 30 seconds; fingerprinted JavaScript is `public, max-age=31536000, immutable`; manifest and service worker are `no-cache`; manifest is `application/manifest+json`; CSP, HSTS, COOP, Permissions-Policy, nosniff, referrer policy, and anti-framing headers are present.
+- Fresh Lighthouse mobile against production: Performance 100, Accessibility 100, Best Practices 100, SEO 100; FCP 1.0 s, LCP 1.4 s, CLS 0. The first Lighthouse attempt could not find a system Chrome binary; rerunning it against the preinstalled Playwright headless Chromium produced these results.
+
+The artifact class remains `pwa-offline`; no infrastructure, DNS, or billing configuration is committed in this repository. The production checkout still returns the 404 documented above, so the external billing registration remains the only known release blocker.
