@@ -1,6 +1,6 @@
 # Takebook repair handoff
 
-## Status: repository repair complete; external billing release blocker remains
+## Status: repository repair deployed; external billing release blocker remains
 
 Repair implementation: `4bef6907e41859ff1f6e7bbbff050dbf14fc458b`.
 
@@ -40,15 +40,21 @@ npm run test:e2e
 
 No package/consumer test applies to this static PWA. No physical Web MIDI device was available; the required computer-keyboard path passed, and Web MIDI remains optional enhancement coverage.
 
-## Deployment
+## Deployment and live verification
 
-Deploy the built `dist/` directory with the factory static configuration:
+The tested production build was deployed to <https://shared-piano-takebook.sociobot.in> with the factory static deployment configuration:
 
 ```sh
-/opt/fleet/lib/deploy-static.sh shared-piano-takebook dist
+/opt/fleet/lib/deploy-static.sh shared-piano-takebook /work/repo/dist
 ```
 
-The repair is ready to deploy after this handoff commit is pushed. Post-deployment checks should rerun the live Playwright suite, `verify-url.sh`, response headers/cache policy, byte-for-byte static artifact identity, and the checkout endpoint. The latter is expected to remain the only acceptance blocker until the billing product is enabled.
+Post-deploy checks on 2026-08-28 UTC:
+
+- Live Playwright: PASS — 11/11; the synthetic worker-byte update test is intentionally local-only and skipped against production. This includes the new 390px online/offline visible-text regression.
+- Live `verify-url.sh`: PASS — HTTP 200 in 615ms; no console/page errors; title, language, one heading, main landmark, image alt text, and button names present.
+- Live identity: PASS — all 24 public `dist/` files matched their production URLs byte-for-byte by SHA-256. `staticwebapp.config.json` is deployment configuration and is not a public artifact.
+- Live response policy: PASS — hashed application JS is immutable for one year; manifest is `application/manifest+json` with `no-cache`; responses retain CSP, HSTS (`max-age=31536000; includeSubDomains; preload`), `X-Frame-Options: DENY`, COOP, Permissions-Policy, nosniff, and strict-origin referrer policy.
+- Live checkout: still FAILS externally with the documented HTTP 404 response. The production UI continues to avoid a broken outbound purchase link.
 
 ## Next required external action
 
