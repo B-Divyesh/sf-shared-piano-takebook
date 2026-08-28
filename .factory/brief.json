@@ -1,0 +1,9 @@
+{
+  "slug": "shared-piano-takebook",
+  "title": "Takebook",
+  "user": "Music teachers and pairs practicing a short piano phrase together who need to keep, annotate, and reopen takes without a DAW.",
+  "smallest_useful_product": "Web MIDI piano-roll recorder: record up to 60 seconds, loop a marked bar range, attach a teacher note, and export standard MIDI/WAV.",
+  "artifact_class": "pwa-offline",
+  "monetization": "freemium — free local takes; teacher pack adds folders and printable practice sheets.",
+  "constraints": "Must work with the computer keyboard; local by default; original synthesized audio only."
+}
