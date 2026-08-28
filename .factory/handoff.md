@@ -1,52 +1,67 @@
-# Takebook independent QA handoff
+# Takebook repair handoff
 
 ## Status
 
-**FAIL**
+Product-side repair is complete and deployed from commit `21ff6e6` at <https://shared-piano-takebook.sociobot.in>. The live static artifact matches the local `dist/` byte-for-byte across all 24 public files.
 
-Tested candidate: `bfd07d7549cd80cd5c48835fcce2ab5f0f92b44e`
+One external launch dependency remains: the factory billing product is not registered/enabled. The production checkout endpoint still returns HTTP 404 `{"error":"enabled factory product","status":404}`. Repository policy prohibits changing billing infrastructure from this product repository. Until the factory registers the product, the UI now honestly shows “Purchases temporarily paused,” exposes no broken purchase link, and preserves license restoration for existing buyers. Re-enable the standard hosted buy link only after the endpoint redirects successfully.
 
-Tested URL: <https://shared-piano-takebook.sociobot.in>
+## Repairs delivered
 
-Verification date: 2026-08-28 UTC
+- Replaced the permissive JSON importer with complete take/note schema and range validation, duplicate-ID detection, and one atomic IndexedDB transaction. The verifier payload `[{"id":"broken","notes":[]}]` is rejected before any write with an actionable “Nothing was imported” message.
+- Added legacy-data recovery. Invalid stored rows are isolated, valid takes remain open/exportable, and each damaged row can be removed through a specific confirmation without clearing other local data.
+- Reworked the 390px piano into a chromatic touch grid. All 13 targets measure 48 × 52 CSS px at 390px, with 8px gaps and no document overflow. Desktop retains the piano-key layout.
+- Automatic invalid-license reconciliation now explicitly says the license is no longer active; the real invalid-token response is cached and the token is removed from the URL.
+- Added Azure Static Web Apps response policy: fingerprinted JS/CSS use one-year immutable caching; service worker and manifest use `no-cache`; the manifest has `application/manifest+json`; CSP, anti-framing, Permissions-Policy, COOP, nosniff, referrer policy, and one-year HSTS are present.
+- Bumped the PWA shell to `takebook-v3` and the versioned manifest start URL to `v=2`.
+- Added ESLint and production-target Playwright configuration.
+- Added exact unit/browser regressions for malformed and boundary backups, atomic rollback, damaged-row recovery, mobile geometry, invalid-license copy/cache behavior, paused checkout disclosure, offline legal navigation, service-worker updates, privacy, reduced motion, and desktop/mobile/legal axe scans.
 
-The live deployment now matches the candidate byte-for-byte across all 24 built files. The free recorder, loop, notes, local save/reopen/delete, MIDI/WAV/JSON exports, keyboard path, offline reload, PWA installability/update behavior, accessibility automation, and performance checks pass.
+## Verification evidence
 
-Acceptance remains blocked by two major defects:
+Verified 2026-08-28 UTC with Node 22.23.2, npm 10.9.8, Playwright 1.58.2, and preinstalled Chromium.
 
-1. The visible Teacher pack checkout endpoint returns HTTP 404 `{"error":"enabled factory product","status":404}`; a new customer cannot buy the advertised unlock.
-2. Importing `[{"id":"broken","notes":[]}]` writes an invalid record to IndexedDB and leaves the take library persistently unavailable after reload, with no in-app recovery.
-
-Additional defects:
-
-- Medium: at 390 px, white piano keys are 41 px wide and black keys are 26.9 px wide, below the required 44 px touch target.
-- Minor: automatic invalid-license reconciliation falls back to generic free-tier copy rather than identifying the inactive license.
-- Minor: hashed assets receive only `max-age=30` rather than long-lived immutable caching.
-- Minor: CSP, anti-framing, Permissions-Policy, and COOP response protections are absent; the HSTS `preload` token uses a max-age below the normal preload minimum.
-
-## Reproduction and verification
+Clean local sequence:
 
 ```sh
-git checkout bfd07d7549cd80cd5c48835fcce2ab5f0f92b44e
 npm ci
+npm run lint
 npm run check
 npm test
 npm run build
 npm run test:e2e
 ```
 
-Clean-checkout results: TypeScript PASS, Vitest 4/4 PASS, production build PASS, repository Playwright 4/4 PASS, npm audit 0 vulnerabilities.
+- Clean install: 172 packages, 0 audit vulnerabilities.
+- ESLint: PASS with zero errors/warnings.
+- TypeScript `tsc --noEmit`: PASS.
+- Vitest: 3 files, 11/11 PASS.
+- Local production Playwright: 11/11 PASS, including the synthetic update test.
+- Production Playwright: 10/10 PASS; the local-only synthetic worker-byte test was intentionally skipped. Live offline reload, keyboard recording, IndexedDB persistence/recovery, import rollback, 390px layout, reduced motion, legal pages, axe, invalid-license state, and privacy all passed.
+- Factory `verify-url.sh`: HTTPS 200, no console/page errors, title/lang/main/one h1/alt/button names present.
+- Accessibility: axe found zero serious or critical violations on desktop, 390px mobile, privacy, and terms. Skip-link focus has a visible 3px outline. All mobile piano targets are 48 × 52px with 8px separation.
+- PWA: manifest and installability error lists are empty; `takebook-v3` controls the page; app and privacy page reload offline; a changed worker installs and announces the in-app update notice.
+- Privacy/license: fresh app and legal journeys contact only the product origin. A real invalid-token test made one opt-in verify request, stripped the URL token, showed the inactive-license notice, and produced no console error.
+- Live identity: 24/24 public build files match `dist/` byte-for-byte.
+- Live response policy: hashed JS returns `Cache-Control: public, max-age=31536000, immutable`; `sw.js` and the manifest return `no-cache`; manifest MIME is correct; CSP, `frame-ancestors 'none'`, `X-Frame-Options: DENY`, Permissions-Policy, COOP, nosniff, referrer policy, and `Strict-Transport-Security: max-age=31536000; includeSubDomains; preload` are present.
+- Production bundle: initial JS 31.84 KB raw / 11.37 KB gzip; app CSS 12.12 KB raw / 3.67 KB gzip; fonts 56.28 KB total; mobile hero AVIF 30.69 KB.
+- Lighthouse 13.4.1 mobile: Performance 100, Accessibility 100, Best Practices 100, SEO 100; FCP 1.1s, LCP 1.4s, TBT 0ms, CLS 0.002, Speed Index 1.1s, total transfer 107 KiB.
 
-Independent Playwright coverage ran 9/9 on both the local production build and production. It covered normal flow, exports, simulated 60-second enforcement, valid and malformed imports, keyboard/focus, 390 px/reduced motion/axe, legal pages, and service-worker-controlled offline persistence. The malformed-import scenario is a characterization of the defect, not a product pass.
+Evidence files are under `/work/.evidence/takebook-repair-final/` in the worker environment.
 
-Fresh Lighthouse 12.8.2 mobile results: Performance 100, Accessibility 100, Best Practices 100, SEO 100; LCP 1.5 s, FCP 1.2 s, TBT 0 ms, max potential input delay 20 ms, CLS 0, initial transfer 100 KiB.
+## Deployment
 
-Full evidence and exact response details are in [verification.md](verification.md).
+Build output remains `dist/` with `dist/index.html` at its root. The original static PWA artifact class and night-market visual system are unchanged.
 
-## Next steps
+```sh
+npm ci && npm test && npm run build
+/opt/fleet/lib/deploy-static.sh shared-piano-takebook dist
+```
 
-1. Register/enable the production billing product and verify a real checkout redirect and return token.
-2. Fully validate an imported take and every note before starting a transaction; make import atomic and add a safe recovery path for bad stored rows.
-3. Redesign or horizontally scroll the mobile piano so each interactive key meets the documented touch-target contract.
-4. Correct license-state messaging, deployment caching, and response hardening headers.
-5. Re-run this verification after fixes. No product code was changed during this QA pass.
+Final Azure Static Web Apps deployment ID: `36713766-1154-4a01-8a2d-134c83c7eb07`.
+
+## Known gaps and next step
+
+- Required external action: register/enable `shared-piano-takebook` in the Sociobot billing engine, verify the production checkout redirects to hosted Dodo checkout, then restore the standard buy link. This is the only verifier finding not repairable inside the authorized repository/deployment scope.
+- No physical MIDI device was available. The required computer-keyboard path passed; Web MIDI remains the previously documented optional enhancement.
+- No separate package/consumer test applies to this static PWA.
