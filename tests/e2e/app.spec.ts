@@ -143,6 +143,21 @@ test('390px piano targets meet the touch size and spacing contract', async ({ pa
   expect(overflow).toBe(0);
 });
 
+test('390px connection status keeps its online and offline text visible', async ({ page, context }) => {
+  await page.setViewportSize({width:390,height:844});
+  await page.goto('/');
+  const status=page.locator('#connection');
+  await expect(status).toContainText('Works offline');
+  await expect(status.locator('span')).toBeVisible();
+  expect(await status.locator('span').evaluate(element => getComputedStyle(element).display)).not.toBe('none');
+  await context.setOffline(true);
+  await page.waitForFunction(() => document.querySelector('#connection span')?.textContent === 'Offline · takes available');
+  await expect(status).toContainText('Offline · takes available');
+  await expect(status.locator('span')).toBeVisible();
+  const overflow=await page.evaluate(() => document.documentElement.scrollWidth-document.documentElement.clientWidth);
+  expect(overflow).toBe(0);
+});
+
 test('automatic invalid-license reconciliation names the inactive license', async ({ page }) => {
   let verifies=0;
   await page.route('https://api.sociobot.in/api/v1/products/shared-piano-takebook/verify?license=invalid-token', async route => {
