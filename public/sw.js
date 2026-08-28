@@ -1,13 +1,28 @@
-const VERSION = 'takebook-v1';
+const VERSION = 'takebook-v2';
 const SHELL = [
   '/', '/?source=pwa&v=1', '/offline.html', '/privacy/', '/terms/', '/manifest.webmanifest',
   '/icons/icon.svg', '/icons/icon-192.png', '/icons/icon-512.png',
   '/assets/space-grotesk.woff2', '/assets/atkinson.woff2',
-  '/assets/takebook-kiosk-960.webp', '/assets/takebook-kiosk-1440.webp'
+  '/assets/takebook-kiosk-960.webp', '/assets/takebook-kiosk-1440.webp',
+  '/assets/takebook-kiosk-960.avif', '/assets/takebook-kiosk-1440.avif'
 ];
 
 self.addEventListener('install', event => {
-  event.waitUntil(caches.open(VERSION).then(cache => cache.addAll(SHELL)).then(() => self.skipWaiting()));
+  event.waitUntil((async () => {
+    const cache = await caches.open(VERSION);
+    await cache.addAll(SHELL);
+    // Vite fingerprints JS/CSS at build time. Discover those URLs from the
+    // already-cached HTML so a first visit is fully available offline.
+    const assets = new Set();
+    for (const path of ['/', '/privacy/', '/terms/']) {
+      const response = await cache.match(path);
+      if (!response) continue;
+      const html = await response.text();
+      for (const match of html.matchAll(/(?:src|href)="(\/assets\/[^"?]+)["?]/g)) assets.add(match[1]);
+    }
+    await cache.addAll([...assets]);
+    await self.skipWaiting();
+  })());
 });
 
 self.addEventListener('activate', event => {
