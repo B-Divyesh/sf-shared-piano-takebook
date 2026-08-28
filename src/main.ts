@@ -254,7 +254,7 @@ function showDelete(id: string): void {
 
 function showDamagedDelete(index: number): void {
   const take = damagedTakes[index]; if (!take) return;
-  showConfirmation({ kind: 'damaged-delete', id: take.id }, 'Remove damaged entry?', `The damaged entry “${take.id}” cannot be opened or exported. Remove only this entry? Your other takes will stay available.`, 'Keep entry', 'Remove entry');
+  showConfirmation({ kind: 'damaged-delete', id: take.id }, 'Remove damaged entry?', `The damaged entry “${take.id}” cannot be opened or exported. Remove only this entry? Your other takes will stay available.`, 'Keep entry', 'Delete take');
 }
 
 function showClearNotes(): void {
