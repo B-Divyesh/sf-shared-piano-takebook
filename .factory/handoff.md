@@ -1,18 +1,33 @@
-# Takebook handoff
+# Takebook independent QA handoff
 
-## Delivered
+## Status
 
-Takebook v1 is a complete static, local-first piano practice PWA. A user can record up to 60 seconds from the computer keyboard or Web MIDI, see velocity-aware note events in a piano roll, adjust and continuously play a loop range with bar/time feedback, add a teacher note and tempo, save/reopen/delete takes in IndexedDB, and export standard MIDI, locally synthesized WAV, or a JSON library backup. JSON backups can be restored.
+**FAIL**
 
-The free tier includes unlimited local takes, notes, looping, and all data/audio exports. The $9 one-time Teacher pack adds custom folders and printable practice sheets. Checkout links to the Sociobot product-slug endpoint; returned/pasted tokens are stored locally and verified at most daily without blocking the free first paint. Privacy and terms pages describe local storage, billing, and verification.
+Tested candidate: `bfd07d7549cd80cd5c48835fcce2ab5f0f92b44e`
 
-The app is installable and offline-capable with a versioned service-worker cache, navigation fallback, manifest, 192/512 maskable icon, update toast, and an explicit online/offline state. It includes storage/error/empty states, delete confirmation, keyboard shortcuts, 44px controls, reduced-motion behavior, and a responsive phone layout.
+Tested URL: <https://shared-piano-takebook.sociobot.in>
 
-The unique night-market neon system is documented in `.factory/design.md`. The original generated kiosk illustration, prompt, review, and provenance are in `assets/src/`; 960/1440 AVIF and WebP derivatives ship locally. Fonts are self-hosted.
+Verification date: 2026-08-28 UTC
 
-## Run and verify
+The live deployment now matches the candidate byte-for-byte across all 24 built files. The free recorder, loop, notes, local save/reopen/delete, MIDI/WAV/JSON exports, keyboard path, offline reload, PWA installability/update behavior, accessibility automation, and performance checks pass.
+
+Acceptance remains blocked by two major defects:
+
+1. The visible Teacher pack checkout endpoint returns HTTP 404 `{"error":"enabled factory product","status":404}`; a new customer cannot buy the advertised unlock.
+2. Importing `[{"id":"broken","notes":[]}]` writes an invalid record to IndexedDB and leaves the take library persistently unavailable after reload, with no in-app recovery.
+
+Additional defects:
+
+- Medium: at 390 px, white piano keys are 41 px wide and black keys are 26.9 px wide, below the required 44 px touch target.
+- Minor: automatic invalid-license reconciliation falls back to generic free-tier copy rather than identifying the inactive license.
+- Minor: hashed assets receive only `max-age=30` rather than long-lived immutable caching.
+- Minor: CSP, anti-framing, Permissions-Policy, and COOP response protections are absent; the HSTS `preload` token uses a max-age below the normal preload minimum.
+
+## Reproduction and verification
 
 ```sh
+git checkout bfd07d7549cd80cd5c48835fcce2ab5f0f92b44e
 npm ci
 npm run check
 npm test
@@ -20,29 +35,18 @@ npm run build
 npm run test:e2e
 ```
 
-Deployment command: `npm run build`
+Clean-checkout results: TypeScript PASS, Vitest 4/4 PASS, production build PASS, repository Playwright 4/4 PASS, npm audit 0 vulnerabilities.
 
-Deployment directory: `dist/` (`dist/index.html` is at its root)
+Independent Playwright coverage ran 9/9 on both the local production build and production. It covered normal flow, exports, simulated 60-second enforcement, valid and malformed imports, keyboard/focus, 390 px/reduced motion/axe, legal pages, and service-worker-controlled offline persistence. The malformed-import scenario is a characterization of the defect, not a product pass.
 
-Verified on 2026-08-28:
+Fresh Lighthouse 12.8.2 mobile results: Performance 100, Accessibility 100, Best Practices 100, SEO 100; LCP 1.5 s, FCP 1.2 s, TBT 0 ms, max potential input delay 20 ms, CLS 0, initial transfer 100 KiB.
 
-- TypeScript: pass
-- Vitest: 4/4 unit tests pass (MIDI, WAV, filename encoding)
-- Playwright 1.58.2 Chromium: 4/4 pass
-  - keyboard recording → annotation → IndexedDB save → reload → reopen
-  - service-worker-controlled offline reload
-  - privacy/terms semantics
-  - axe scan with zero serious or critical violations
-- Browser console/page errors during those journeys: none
-- Production bundle: 28.07 KB initial JS (10.29 KB gzip), 11.52 KB CSS (3.52 KB gzip), 56 KB total fonts
-- Mobile hero: 30 KB AVIF / 43 KB WebP at 960px (both below 300 KB)
-- Lighthouse mobile: Performance 100, Accessibility 100, Best Practices 100, SEO 100
-- Lighthouse lab metrics: LCP 1.7s, CLS 0.002, TBT 20ms, max potential input delay 70ms
+Full evidence and exact response details are in [verification.md](verification.md).
 
-## Known limitations and next steps
+## Next steps
 
-- Web MIDI availability and device naming depend on the browser/OS; the full computer-keyboard path is always present.
-- The billing product is registered later by the factory. The production slug-based checkout/verify contract is implemented, but a real purchase was not made in this build container.
-- Audio is an intentionally small original Web Audio synth, not sampled acoustic-piano playback.
-- Data sync and live collaboration are intentionally out of scope; users move data with JSON backups.
-- A future teacher-pack iteration could add multiple custom sheet layouts after observing real print usage.
+1. Register/enable the production billing product and verify a real checkout redirect and return token.
+2. Fully validate an imported take and every note before starting a transaction; make import atomic and add a safe recovery path for bad stored rows.
+3. Redesign or horizontally scroll the mobile piano so each interactive key meets the documented touch-target contract.
+4. Correct license-state messaging, deployment caching, and response hardening headers.
+5. Re-run this verification after fixes. No product code was changed during this QA pass.
