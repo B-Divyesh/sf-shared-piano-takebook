@@ -16,7 +16,7 @@ Live product: <https://shared-piano-takebook.sociobot.in>
 - Optional $9 one-time Teacher pack with custom folders and printable practice sheets
 - Privacy and terms pages; no recording upload, analytics, runtime CDNs, or accounts
 
-The Teacher pack uses the Sociobot hosted checkout and license-verification API. No payment-provider code or product ID is embedded in this repository.
+The Teacher pack uses the Sociobot license-verification API. New checkout is visibly paused until the factory registers the production billing product; existing license restoration remains available. No payment-provider code or product ID is embedded in this repository.
 
 ## Run locally
 

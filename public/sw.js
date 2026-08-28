@@ -1,6 +1,6 @@
-const VERSION = 'takebook-v2';
+const VERSION = 'takebook-v3';
 const SHELL = [
-  '/', '/?source=pwa&v=1', '/offline.html', '/privacy/', '/terms/', '/manifest.webmanifest',
+  '/', '/?source=pwa&v=2', '/offline.html', '/privacy/', '/terms/', '/manifest.webmanifest',
   '/icons/icon.svg', '/icons/icon-192.png', '/icons/icon-512.png',
   '/assets/space-grotesk.woff2', '/assets/atkinson.woff2',
   '/assets/takebook-kiosk-960.webp', '/assets/takebook-kiosk-1440.webp',

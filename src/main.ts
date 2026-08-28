@@ -1,8 +1,8 @@
 import './style.css';
 import { PianoSynth } from './audio';
-import { deleteTake, importTakes, listTakes, saveTake } from './db';
+import { deleteTake, importTakes, loadTakeLibrary, saveTake, type DamagedTake } from './db';
 import { midiBytes, safeFilename, wavBytes } from './exports';
-import { cachedVerdict, captureLicenseFromUrl, checkoutUrl, getToken, optimisticUnlock, setToken, verifyLicense } from './license';
+import { cachedVerdict, captureLicenseFromUrl, getToken, optimisticUnlock, setToken, verifyLicense } from './license';
 import { EMPTY_TAKE, type NoteEvent, type Take } from './types';
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
@@ -12,6 +12,7 @@ const noteNames = ['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B
 
 let current = EMPTY_TAKE();
 let takes: Take[] = [];
+let damagedTakes: DamagedTake[] = [];
 let isRecording = false;
 let recordStarted = 0;
 let recordTimer = 0;
@@ -66,7 +67,7 @@ app.innerHTML = `
       </div>
     </section>
     <section class="library shell" aria-labelledby="library-title"><p class="eyebrow">On this device</p><h2 id="library-title">Saved takes</h2><div class="library-tools"><div class="field"><label for="take-filter">Show folder</label><select id="take-filter"><option value="">All takes</option></select></div><div><input id="import-file" class="sr-only" type="file" accept="application/json,.json" aria-label="Choose a Takebook backup file"><button id="import-json" class="button small ghost" type="button">Import backup</button></div></div><ul id="take-list" class="take-list"></ul></section>
-    <section id="teacher-pack" class="pack shell" aria-labelledby="pack-title"><div><p class="eyebrow">For a teaching week</p><h2 id="pack-title">Teacher pack</h2><p>Keep a larger takebook tidy without changing the free recorder.</p><ul><li>Group takes into practice folders</li><li>Print a clean practice sheet with the phrase and note</li><li>One-time purchase, yours on licensed devices</li></ul><p class="price">$9 one time</p><a id="buy-link" class="button primary" href="${checkoutUrl()}">Buy Teacher pack</a></div><div class="license-box"><h3>Restore a purchase</h3><p id="license-status" class="license-status" role="status">The free recorder is ready. Add a license only for teacher tools.</p><div class="field"><label for="license-token">License token</label><input id="license-token" type="text" inputmode="text" autocomplete="off" spellcheck="false" value="${escapeAttr(getToken())}"></div><div class="editor-actions"><button id="verify-license" class="button" type="button">Verify license</button></div><p><small>Verification contacts Sociobot at most once per day. Checkout is handled by Sociobot/Dodo, the merchant of record. <a href="/terms/">Terms</a> apply.</small></p></div></section>
+    <section id="teacher-pack" class="pack shell" aria-labelledby="pack-title"><div><p class="eyebrow">For a teaching week</p><h2 id="pack-title">Teacher pack</h2><p>Keep a larger takebook tidy without changing the free recorder.</p><ul><li>Group takes into practice folders</li><li>Print a clean practice sheet with the phrase and note</li><li>One-time purchase, yours on licensed devices</li></ul><p class="price">$9 one time</p><button class="button primary" type="button" disabled aria-describedby="checkout-status">Purchases temporarily paused</button><p id="checkout-status" class="checkout-status" role="status">New checkout is not available yet. Existing licenses can still be restored.</p></div><div class="license-box"><h3>Restore a purchase</h3><p id="license-status" class="license-status" role="status">The free recorder is ready. Add a license only for teacher tools.</p><div class="field"><label for="license-token">License token</label><input id="license-token" type="text" inputmode="text" autocomplete="off" spellcheck="false" value="${escapeAttr(getToken())}"></div><div class="editor-actions"><button id="verify-license" class="button" type="button">Verify license</button></div><p><small>Verification contacts Sociobot at most once per day. Checkout is handled by Sociobot/Dodo, the merchant of record. <a href="/terms/">Terms</a> apply.</small></p></div></section>
   </main>
   <footer class="site-foot"><div class="shell foot-inner"><div>Takebook · Local-first piano practice<br><span class="generated-note">The night-market illustration was generated for this project and reviewed by the maker.</span></div><div><a href="/privacy/">Privacy</a> · <a href="/terms/">Terms</a> · <a href="https://github.com/B-Divyesh/sf-shared-piano-takebook">Source</a></div></div></footer>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
@@ -94,7 +95,7 @@ function buildPiano(): void {
   const whites = [60,62,64,65,67,69,71,72];
   const blacks = [61,63,66,68,70];
   const keyFor = (note: number) => [...keyNotes].find(([,n]) => n === note)?.[0]?.toUpperCase() ?? '';
-  byId('piano').innerHTML = [...whites,...blacks].map(note => `<button class="key ${blacks.includes(note)?'black':''}" type="button" data-note="${note}" aria-label="${noteNames[note%12]}${Math.floor(note/12)-1}, key ${keyFor(note)}"><span>${keyFor(note)}</span></button>`).join('');
+  byId('piano').innerHTML = Array.from({length:13},(_,index)=>60+index).map(note => `<button class="key ${blacks.includes(note)?'black':''}" type="button" data-note="${note}" aria-label="${noteNames[note%12]}${Math.floor(note/12)-1}, key ${keyFor(note)}"><span>${keyFor(note)}</span></button>`).join('');
   document.querySelectorAll<HTMLButtonElement>('.key').forEach(key => {
     const note = Number(key.dataset.note);
     key.addEventListener('pointerdown', e => { e.preventDefault(); key.setPointerCapture(e.pointerId); void inputDown(note, 96); });
@@ -201,16 +202,26 @@ function loadIntoEditor(take: Take): void {
 async function persistCurrent(): Promise<void> {
   syncFromForm();
   if (!current.notes.length) { announce('Record at least one note before saving.'); return; }
-  current.updatedAt = new Date().toISOString(); await saveTake(current); takes = await listTakes(); renderLibrary(); byId('autosave').textContent = 'Saved on this device'; announce('Take saved on this device.');
+  current.updatedAt = new Date().toISOString(); await saveTake(current); await refreshLibrary(); byId('autosave').textContent = 'Saved on this device'; announce('Take saved on this device.');
 }
 
 function renderLibrary(): void {
   const filter = byId<HTMLSelectElement>('take-filter').value;
   const shown = filter ? takes.filter(t => t.folder === filter) : takes;
-  byId('take-list').innerHTML = shown.length ? shown.map(take => `<li class="take-item ${take.id===current.id?'selected':''}"><button class="take-open" type="button" data-open="${take.id}"><strong>${escapeAttr(take.title)}</strong><span class="take-meta"><span>${take.notes.length} notes</span><span>${take.duration.toFixed(1)} sec</span><span>${new Date(take.updatedAt).toLocaleDateString()}</span>${take.folder?`<span>Folder: ${escapeAttr(take.folder)}</span>`:''}</span></button><div class="take-actions"><button class="button small" type="button" data-open="${take.id}">Open</button><button class="button small danger" type="button" data-delete="${take.id}" aria-label="Delete ${escapeAttr(take.title)}">Delete</button></div></li>`).join('') : `<li class="empty-library"><strong>No saved takes${filter?' in this folder':''}.</strong><br>Record a phrase above, add a note, then save it here.</li>`;
+  const damaged = damagedTakes.map((take, index) => `<li class="take-item damaged-take"><div><strong>Damaged saved entry</strong><span class="take-meta"><span>ID: ${escapeAttr(take.id)}</span><span>${escapeAttr(take.problem)}</span></span></div><div class="take-actions"><button class="button small danger" type="button" data-delete-damaged="${index}">Remove damaged entry</button></div></li>`).join('');
+  const valid = shown.map(take => `<li class="take-item ${take.id===current.id?'selected':''}"><button class="take-open" type="button" data-open="${escapeAttr(take.id)}"><strong>${escapeAttr(take.title)}</strong><span class="take-meta"><span>${take.notes.length} notes</span><span>${take.duration.toFixed(1)} sec</span><span>${new Date(take.updatedAt).toLocaleDateString()}</span>${take.folder?`<span>Folder: ${escapeAttr(take.folder)}</span>`:''}</span></button><div class="take-actions"><button class="button small" type="button" data-open="${escapeAttr(take.id)}">Open</button><button class="button small danger" type="button" data-delete="${escapeAttr(take.id)}" aria-label="Delete ${escapeAttr(take.title)}">Delete</button></div></li>`).join('');
+  byId('take-list').innerHTML = damaged + valid || `<li class="empty-library"><strong>No saved takes${filter?' in this folder':''}.</strong><br>Record a phrase above, add a note, then save it here.</li>`;
   document.querySelectorAll<HTMLElement>('[data-open]').forEach(el => el.addEventListener('click', () => { const take = takes.find(t => t.id === el.dataset.open); if (take) loadIntoEditor(take); }));
   document.querySelectorAll<HTMLButtonElement>('[data-delete]').forEach(el => el.addEventListener('click', () => showDelete(el.dataset.delete!)));
+  document.querySelectorAll<HTMLButtonElement>('[data-delete-damaged]').forEach(el => el.addEventListener('click', () => showDamagedDelete(Number(el.dataset.deleteDamaged))));
   refreshFolderFilters();
+}
+
+async function refreshLibrary(): Promise<void> {
+  const library = await loadTakeLibrary();
+  takes = library.takes;
+  damagedTakes = library.damaged;
+  renderLibrary();
 }
 
 function refreshFolderFilters(): void {
@@ -221,9 +232,17 @@ function refreshFolderFilters(): void {
 }
 
 let pendingDelete = '';
+let deletingDamaged = false;
 function showDelete(id: string): void {
   const take = takes.find(t => t.id === id); if (!take) return; pendingDelete = id;
+  deletingDamaged = false;
   byId('confirm-copy').textContent = `“${take.title}” will be removed from this device. Export a backup first if you may need it.`;
+  byId<HTMLDialogElement>('confirm-dialog').showModal(); byId<HTMLButtonElement>('cancel-delete').focus();
+}
+
+function showDamagedDelete(index: number): void {
+  const take = damagedTakes[index]; if (!take) return; pendingDelete = take.id; deletingDamaged = true;
+  byId('confirm-copy').textContent = `The damaged entry “${take.id}” cannot be opened or exported. Remove only this entry? Your other takes will stay available.`;
   byId<HTMLDialogElement>('confirm-dialog').showModal(); byId<HTMLButtonElement>('cancel-delete').focus();
 }
 
@@ -266,11 +285,11 @@ function wireEvents(): void {
   byId('export-wav').addEventListener('click', () => { syncFromForm(); if (!current.notes.length) return announce('Record or open a take before exporting.'); download(wavBytes(current), 'audio/wav', `${safeFilename(current.title)}.wav`); announce('WAV rendered on this device.'); });
   byId('export-json').addEventListener('click', () => { download(JSON.stringify(takes, null, 2), 'application/json', `takebook-backup-${new Date().toISOString().slice(0,10)}.json`); announce('Takebook backup exported.'); });
   byId('import-json').addEventListener('click', () => byId<HTMLInputElement>('import-file').click());
-  byId<HTMLInputElement>('import-file').addEventListener('change', async e => { const file = (e.target as HTMLInputElement).files?.[0]; if (!file) return; try { const count=await importTakes(JSON.parse(await file.text()));takes=await listTakes();renderLibrary();announce(`Imported ${count} ${count===1?'take':'takes'}.`); } catch(error) { announce(error instanceof Error ? error.message : 'That backup could not be imported.'); } });
+  byId<HTMLInputElement>('import-file').addEventListener('change', async e => { const input=e.target as HTMLInputElement;const file=input.files?.[0];if(!file)return;try{const count=await importTakes(JSON.parse(await file.text()));await refreshLibrary();announce(`Imported ${count} ${count===1?'take':'takes'}.`);}catch(error){announce(error instanceof Error?error.message:'That backup could not be imported.');}finally{input.value='';} });
   byId<HTMLSelectElement>('take-filter').addEventListener('change', renderLibrary);
   byId('print-sheet').addEventListener('click', () => { if (!teacherUnlocked) { location.hash='teacher-pack'; announce('Practice sheets are included in the Teacher pack.'); return; } syncFromForm(); window.print(); });
   byId('cancel-delete').addEventListener('click', () => byId<HTMLDialogElement>('confirm-dialog').close());
-  byId('confirm-delete').addEventListener('click', async () => { await deleteTake(pendingDelete); takes=await listTakes(); if(current.id===pendingDelete){const next=EMPTY_TAKE();current=next;titleInput.value=next.title;noteInput.value='';tempoInput.value=String(next.tempo);folderInput.value='';timer.value='00:00.0';timer.textContent='00:00.0';renderRoll();} byId<HTMLDialogElement>('confirm-dialog').close(); renderLibrary(); announce('Take deleted from this device.'); });
+  byId('confirm-delete').addEventListener('click', async () => { await deleteTake(pendingDelete); if(!deletingDamaged&&current.id===pendingDelete){const next=EMPTY_TAKE();current=next;titleInput.value=next.title;noteInput.value='';tempoInput.value=String(next.tempo);folderInput.value='';timer.value='00:00.0';timer.textContent='00:00.0';renderRoll();} byId<HTMLDialogElement>('confirm-dialog').close(); await refreshLibrary(); announce(deletingDamaged?'Damaged entry removed. Your other takes are unchanged.':'Take deleted from this device.'); });
   byId('verify-license').addEventListener('click', async () => { const token=byId<HTMLInputElement>('license-token').value.trim(); if(!token){announce('Paste your license token first.');return;} setToken(token); byId('license-status').textContent='Checking license…'; try{const verdict=await verifyLicense(true);teacherUnlocked=Boolean(verdict?.valid);updateLicenseUI(teacherUnlocked?'Teacher pack unlocked on this device.':'This license is not active. Check the token or buy a new license.');}catch{updateLicenseUI('Could not verify while offline. Your free takes are unaffected.');} });
   window.addEventListener('keydown', e => { const target=e.target as HTMLElement; const editing=target.matches('input,textarea,select'); const note=keyNotes.get(e.key.toLowerCase()); if(note!==undefined&&!e.repeat&&!editing){e.preventDefault();void inputDown(note,94);} else if(!target.matches('input,textarea,select,button,a')&&e.code==='Space'&&!e.repeat){e.preventDefault();isRecording?stopRecording():startRecording();} else if(!target.matches('input,textarea,select,button,a')&&e.key==='Enter'&&!e.repeat){e.preventDefault();isPlaying?stopPlayback():void startPlayback();} });
   window.addEventListener('keyup', e => { const note=keyNotes.get(e.key.toLowerCase()); if(note!==undefined){e.preventDefault();inputUp(note);} });
@@ -288,10 +307,10 @@ async function registerServiceWorker(): Promise<void> {
 
 async function init(): Promise<void> {
   buildPiano(); wireEvents(); updateConnection(); renderRoll();
-  try { takes=await listTakes(); renderLibrary(); } catch { byId('take-list').innerHTML='<li class="empty-library"><strong>Local storage is unavailable.</strong><br>You can still record and export this session. Check private browsing or storage settings.</li>'; announce('Saved takes could not be opened. Exports still work.'); }
+  try { await refreshLibrary(); if(damagedTakes.length) announce(`${damagedTakes.length} damaged saved ${damagedTakes.length===1?'entry was':'entries were'} isolated. Your other takes are available.`); } catch { byId('take-list').innerHTML='<li class="empty-library"><strong>Local storage is unavailable.</strong><br>You can still record and export this session. Check private browsing or storage settings.</li>'; announce('Saved takes could not be opened. Exports still work.'); }
   const returned=captureLicenseFromUrl(); if(returned) byId<HTMLInputElement>('license-token').value=getToken();
   updateLicenseUI(returned?'Purchase returned. Verifying your license…':undefined);
-  if(getToken()){try{const verdict=await verifyLicense();teacherUnlocked=Boolean(verdict?.valid);updateLicenseUI();}catch{const cached=cachedVerdict();teacherUnlocked=Boolean(cached?.valid);updateLicenseUI(teacherUnlocked?'Teacher pack available from the last check.':'License check needs a connection; the free recorder is ready.');}}
+  if(getToken()){try{const verdict=await verifyLicense();teacherUnlocked=Boolean(verdict?.valid);updateLicenseUI(teacherUnlocked?undefined:'This license is no longer active. Check the token or buy a new license.');}catch{const cached=cachedVerdict();teacherUnlocked=Boolean(cached?.valid);updateLicenseUI(teacherUnlocked?'Teacher pack available from the last check.':'License check needs a connection; the free recorder is ready.');}}
   void registerServiceWorker();
 }
 
