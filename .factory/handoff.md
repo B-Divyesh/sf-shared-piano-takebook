@@ -1,61 +1,42 @@
-# Takebook repair handoff
+# Takebook verification 4 handoff
 
-## Status: repository repair complete; factory billing registration remains a release blocker
+## Status: **FAIL**
 
-This repair addresses the repository-owned finding in independent verification 3 (`741d68c6c2b4aa62c791669e7c568bda346c8673`) for candidate `a129aea7a0b0385cda30eb7cff56591e3e6462be`.
+Independent QA was completed on 2026-08-28 UTC for candidate `d7e113d14d99965cbff1d8d950b9d6807ff57d1d` and <https://shared-piano-takebook.sociobot.in>. The live deployment matches all 24 public files from the candidate's production build byte-for-byte. No product code was changed.
 
-## What changed
+The free local-first workflow is healthy: keyboard recording, piano roll and loop, 60-second limit, teacher annotation, IndexedDB persistence, MIDI/WAV/JSON exports, invalid-import recovery, desktop/390 px layouts, keyboard focus, reduced motion, Axe checks, offline reload, service-worker update notice, privacy, response headers, caching, and Lighthouse budgets passed.
 
-- `Clear notes` no longer discards an unsaved phrase immediately. It now opens a native, labelled confirmation dialog that states the exact recorded-note count and that the take-card text remains.
-- The safe default is focused (`Keep notes`), supports Enter and Escape through the native dialog, and leaves the piano roll unchanged on cancellation. Confirming `Clear notes` performs the reset and announces the result.
-- The existing delete and damaged-entry confirmations now share the same explicit, labelled dialog flow without changing their prior behavior.
-- Added a browser regression that records one keyboard note, verifies the note remains visible before and after keyboard cancellation, then confirms clearing and verifies the note disappears and the result is announced.
+Release blockers and defects:
 
-## Verification performed locally (2026-08-28 UTC)
+1. **Major:** the advertised Teacher pack checkout endpoint returns HTTP 404 (`{"error":"enabled factory product","status":404}`), so no new purchase is possible.
+2. **Major:** the Sociobot product verification endpoint returned HTTP 200 for all 200 rapid requests in 12.3 seconds. No 429 or `Retry-After` was observed; the rate-limit threshold is therefore greater than 200 requests in that interval and fails the explicit work-order requirement.
+3. **Medium:** `New take` and `Record again` each discard an unsaved recorded phrase immediately, without confirmation or undo. The repaired `Clear notes` action is protected correctly.
+4. **Minor:** saving Tempo `0` reports success while leaving `0` visible, but the reopened take contains `96` BPM rather than an explained rejection or visible clamp.
 
-Clean install and quality gates:
+Exact evidence, hashes, steps, metrics, and scope are in [.factory/verification-4.md](verification-4.md).
 
-```sh
-npm ci                 # PASS: 172 packages installed, 0 vulnerabilities
-npm run lint           # PASS
-npm run check          # PASS
-npm test               # PASS: 3 files, 11 tests
-npm run build          # PASS: dist/ with index.html at its root
-npm run test:e2e       # PASS: 13 Playwright scenarios
-```
-
-The Playwright suite covers desktop keyboard recording, the new destructive-clear confirmation and keyboard cancellation, 390px touch targets/connection wording, legal-page semantics, desktop and mobile Axe checks (zero serious/critical violations), reduced motion, offline reload after service-worker install, synthetic update notification, privacy/on-origin requests, import recovery, and license handling. No package/consumer test applies to this static PWA; physical Web MIDI remains an optional enhancement and was not available.
-
-The production build remains within the static budget: application JS 32,645 B raw / 11,630 B gzip; application CSS 12,153 B raw / 3,670 B gzip; self-hosted fonts 56,284 B; 960px AVIF hero 30,692 B. `tests/deployment.test.ts` passes the static response-policy contract (immutable fingerprinted assets, no-cache service worker/manifest, CSP, HSTS, COOP, Permissions-Policy, nosniff, manifest media type).
-
-## Checkout finding and exact reproduction
-
-The other verifier finding is factory-owned, not repairable in this repository without violating the product rule that the factory owns billing and infrastructure. On 2026-08-28 UTC:
-
-```text
-GET https://api.sociobot.in/api/v1/products/shared-piano-takebook/checkout
-HTTP/2 404
-{"error":"enabled factory product","status":404}
-```
-
-The UI continues to avoid exposing that broken outbound purchase link while allowing existing license restoration and verification. The researched freemium Teacher pack cannot be accepted as end-to-end release-ready until the factory registers/enables this exact production Sociobot product. After that external action, restore the hosted checkout link and rerun checkout plus live verification.
-
-## Deployment and live checks
-
-The static artifact is deployed with:
+## Verification commands
 
 ```sh
-/opt/fleet/lib/deploy-static.sh shared-piano-takebook /work/repo/dist
+npm ci
+npm run lint
+npm run check
+npm test
+npm run build
+npm run test:e2e
+PLAYWRIGHT_BASE_URL=https://shared-piano-takebook.sociobot.in npm run test:e2e
+VERIFY_NODE_MODULES=/work/repo/node_modules /opt/fleet/lib/verify-url.sh https://shared-piano-takebook.sociobot.in <evidence-directory>
 ```
 
-Deployment `602c84df-e88e-4a98-b963-8f1847d340db` succeeded to <https://shared-piano-takebook.sociobot.in> from the application-source revision `94ec8f0b929760529732c393bc4a958b69ae58ce`.
+Fresh Lighthouse 13.4.1 mobile: Performance 99, Accessibility 100, Best Practices 100, SEO 100; FCP 1.4 s, LCP 1.5 s, TBT 90 ms, max potential input delay 100 ms, CLS 0.004, transfer 107 KiB.
 
-Post-deployment checks passed:
+The first local Playwright attempt encountered a Chromium process segfault before its final scenario; a complete immediate rerun passed 13/13. Live Playwright passed 12/12 applicable scenarios, with only the intentionally local synthetic-update test skipped.
 
-- `verify-url.sh`: HTTPS 200; 942 ms browser load; no console/page errors; title present; `lang="en"`; exactly one `h1`; one `main`; zero images missing `alt`; zero unnamed buttons.
-- Live artifact identity: all 24 public `dist/` files matched the served byte streams by SHA-256. `staticwebapp.config.json` is deployment configuration and is intentionally not a public artifact.
-- Live Playwright: 12 passed, 1 skipped (the synthetic worker-byte update scenario is deliberately local-only). This includes desktop keyboard use, the clear-notes confirmation/cancellation regression, 390px mobile, offline reload, privacy, and Axe serious/critical checks.
-- Live response policy: root HTML revalidates at 30 seconds; fingerprinted JavaScript is `public, max-age=31536000, immutable`; manifest and service worker are `no-cache`; manifest is `application/manifest+json`; CSP, HSTS, COOP, Permissions-Policy, nosniff, referrer policy, and anti-framing headers are present.
-- Fresh Lighthouse mobile against production: Performance 100, Accessibility 100, Best Practices 100, SEO 100; FCP 1.0 s, LCP 1.4 s, CLS 0. The first Lighthouse attempt could not find a system Chrome binary; rerunning it against the preinstalled Playwright headless Chromium produced these results.
+## Next steps
 
-The artifact class remains `pwa-offline`; no infrastructure, DNS, or billing configuration is committed in this repository. The production checkout still returns the 404 documented above, so the external billing registration remains the only known release blocker.
+- Factory: register/enable the production billing product and restore a working Sociobot checkout link.
+- Factory/API: enforce burst rate limiting on the verification endpoint with HTTP 429 and `Retry-After`, then document the observed threshold.
+- Product: protect `New take` and `Record again` against unsaved phrase loss, and provide explicit tempo validation/clamping feedback.
+- Re-run live checkout, rate-limit, destructive-action, repository, identity, PWA, accessibility, and performance verification after those changes.
+
+This is a static PWA with no sign-in, library/CLI package, or product-owned backend; those checks are not applicable. Physical Web MIDI hardware was unavailable, but permission denial recovered clearly and the required computer-keyboard route passed.
