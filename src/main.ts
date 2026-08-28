@@ -71,7 +71,7 @@ app.innerHTML = `
   </main>
   <footer class="site-foot"><div class="shell foot-inner"><div>Takebook · Local-first piano practice<br><span class="generated-note">The night-market illustration was generated for this project and reviewed by the maker.</span></div><div><a href="/privacy/">Privacy</a> · <a href="/terms/">Terms</a> · <a href="https://github.com/B-Divyesh/sf-shared-piano-takebook">Source</a></div></div></footer>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <dialog id="confirm-dialog"><h2>Delete this take?</h2><p id="confirm-copy"></p><div class="dialog-actions"><button id="cancel-delete" class="button" type="button">Keep take</button><button id="confirm-delete" class="button danger" type="button">Delete take</button></div></dialog>
+  <dialog id="confirm-dialog" aria-labelledby="confirm-title" aria-describedby="confirm-copy"><h2 id="confirm-title">Delete this take?</h2><p id="confirm-copy"></p><div class="dialog-actions"><button id="cancel-confirm" class="button" type="button">Keep take</button><button id="confirm-action" class="button danger" type="button">Delete take</button></div></dialog>
 `;
 
 function byId<T extends HTMLElement>(id: string): T { return document.getElementById(id) as T; }
@@ -230,19 +230,50 @@ function refreshFolderFilters(): void {
   byId<HTMLDataListElement>('folder-options').innerHTML = [...new Set(['Monday studio','Recital prep','Technique',...folders])].map(f => `<option value="${escapeAttr(f)}"></option>`).join('');
 }
 
-let pendingDelete = '';
-let deletingDamaged = false;
+type Confirmation =
+  | { kind: 'delete'; id: string }
+  | { kind: 'damaged-delete'; id: string }
+  | { kind: 'clear-notes' };
+
+let pendingConfirmation: Confirmation | null = null;
+
+function showConfirmation(confirmation: Confirmation, title: string, copy: string, cancelLabel: string, actionLabel: string): void {
+  pendingConfirmation = confirmation;
+  byId('confirm-title').textContent = title;
+  byId('confirm-copy').textContent = copy;
+  byId<HTMLButtonElement>('cancel-confirm').textContent = cancelLabel;
+  byId<HTMLButtonElement>('confirm-action').textContent = actionLabel;
+  byId<HTMLDialogElement>('confirm-dialog').showModal();
+  byId<HTMLButtonElement>('cancel-confirm').focus();
+}
+
 function showDelete(id: string): void {
-  const take = takes.find(t => t.id === id); if (!take) return; pendingDelete = id;
-  deletingDamaged = false;
-  byId('confirm-copy').textContent = `“${take.title}” will be removed from this device. Export a backup first if you may need it.`;
-  byId<HTMLDialogElement>('confirm-dialog').showModal(); byId<HTMLButtonElement>('cancel-delete').focus();
+  const take = takes.find(t => t.id === id); if (!take) return;
+  showConfirmation({ kind: 'delete', id }, 'Delete this take?', `“${take.title}” will be removed from this device. Export a backup first if you may need it.`, 'Keep take', 'Delete take');
 }
 
 function showDamagedDelete(index: number): void {
-  const take = damagedTakes[index]; if (!take) return; pendingDelete = take.id; deletingDamaged = true;
-  byId('confirm-copy').textContent = `The damaged entry “${take.id}” cannot be opened or exported. Remove only this entry? Your other takes will stay available.`;
-  byId<HTMLDialogElement>('confirm-dialog').showModal(); byId<HTMLButtonElement>('cancel-delete').focus();
+  const take = damagedTakes[index]; if (!take) return;
+  showConfirmation({ kind: 'damaged-delete', id: take.id }, 'Remove damaged entry?', `The damaged entry “${take.id}” cannot be opened or exported. Remove only this entry? Your other takes will stay available.`, 'Keep entry', 'Remove entry');
+}
+
+function showClearNotes(): void {
+  if (isRecording) stopRecording();
+  stopPlayback();
+  if (!current.notes.length) { announce('There are no recorded notes to clear.'); return; }
+  const count = current.notes.length;
+  showConfirmation({ kind: 'clear-notes' }, 'Clear recorded notes?', `Clear ${count} recorded ${count === 1 ? 'note' : 'notes'} from this unsaved phrase? The take card text stays, but these notes cannot be restored.`, 'Keep notes', 'Clear notes');
+}
+
+function clearNotes(): void {
+  current.notes = [];
+  current.duration = 0;
+  current.loopStart = 0;
+  current.loopEnd = 4;
+  timer.value = '00:00.0';
+  timer.textContent = '00:00.0';
+  renderRoll();
+  announce('Recorded notes cleared. The take card is unchanged.');
 }
 
 function download(data: BlobPart, type: string, filename: string): void {
@@ -273,7 +304,7 @@ function handleMidi(event: MIDIMessageEvent): void {
 function wireEvents(): void {
   recordButton.addEventListener('click', () => isRecording ? stopRecording() : startRecording());
   playButton.addEventListener('click', () => isPlaying ? stopPlayback() : void startPlayback());
-  byId('clear').addEventListener('click', () => { stopPlayback(); current.notes=[]; current.duration=0; current.loopStart=0; current.loopEnd=4; timer.value='00:00.0';timer.textContent='00:00.0';renderRoll();announce('Notes cleared. The take card is unchanged.'); });
+  byId('clear').addEventListener('click', showClearNotes);
   [byId('midi'),byId('midi-top')].forEach(button => button.addEventListener('click', () => void connectMidi()));
   loopStartInput.addEventListener('input', () => { current.loopStart = Math.min(Number(loopStartInput.value), current.loopEnd - .2); renderRoll(); });
   loopEndInput.addEventListener('input', () => { current.loopEnd = Math.max(Number(loopEndInput.value), current.loopStart + .2); renderRoll(); });
@@ -287,8 +318,25 @@ function wireEvents(): void {
   byId<HTMLInputElement>('import-file').addEventListener('change', async e => { const input=e.target as HTMLInputElement;const file=input.files?.[0];if(!file)return;try{const count=await importTakes(JSON.parse(await file.text()));await refreshLibrary();announce(`Imported ${count} ${count===1?'take':'takes'}.`);}catch(error){announce(error instanceof Error?error.message:'That backup could not be imported.');}finally{input.value='';} });
   byId<HTMLSelectElement>('take-filter').addEventListener('change', renderLibrary);
   byId('print-sheet').addEventListener('click', () => { if (!teacherUnlocked) { location.hash='teacher-pack'; announce('Practice sheets are included in the Teacher pack.'); return; } syncFromForm(); window.print(); });
-  byId('cancel-delete').addEventListener('click', () => byId<HTMLDialogElement>('confirm-dialog').close());
-  byId('confirm-delete').addEventListener('click', async () => { await deleteTake(pendingDelete); if(!deletingDamaged&&current.id===pendingDelete){const next=EMPTY_TAKE();current=next;titleInput.value=next.title;noteInput.value='';tempoInput.value=String(next.tempo);folderInput.value='';timer.value='00:00.0';timer.textContent='00:00.0';renderRoll();} byId<HTMLDialogElement>('confirm-dialog').close(); await refreshLibrary(); announce(deletingDamaged?'Damaged entry removed. Your other takes are unchanged.':'Take deleted from this device.'); });
+  byId<HTMLDialogElement>('confirm-dialog').addEventListener('close', () => { pendingConfirmation = null; });
+  byId('cancel-confirm').addEventListener('click', () => { pendingConfirmation = null; byId<HTMLDialogElement>('confirm-dialog').close(); });
+  byId('confirm-action').addEventListener('click', async () => {
+    const confirmation = pendingConfirmation;
+    if (!confirmation) return;
+    pendingConfirmation = null;
+    if (confirmation.kind === 'clear-notes') {
+      byId<HTMLDialogElement>('confirm-dialog').close();
+      clearNotes();
+      return;
+    }
+    await deleteTake(confirmation.id);
+    if (confirmation.kind === 'delete' && current.id === confirmation.id) {
+      const next = EMPTY_TAKE(); current = next; titleInput.value = next.title; noteInput.value = ''; tempoInput.value = String(next.tempo); folderInput.value = ''; timer.value = '00:00.0'; timer.textContent = '00:00.0'; renderRoll();
+    }
+    byId<HTMLDialogElement>('confirm-dialog').close();
+    await refreshLibrary();
+    announce(confirmation.kind === 'damaged-delete' ? 'Damaged entry removed. Your other takes are unchanged.' : 'Take deleted from this device.');
+  });
   byId('verify-license').addEventListener('click', async () => { const token=byId<HTMLInputElement>('license-token').value.trim(); if(!token){announce('Paste your license token first.');return;} setToken(token); byId('license-status').textContent='Checking license…'; try{const verdict=await verifyLicense(true);teacherUnlocked=Boolean(verdict?.valid);updateLicenseUI(teacherUnlocked?'Teacher pack unlocked on this device.':'This license is not active. Check the token; new purchases are temporarily paused.');}catch{updateLicenseUI('Could not verify while offline. Your free takes are unaffected.');} });
   window.addEventListener('keydown', e => { const target=e.target as HTMLElement; const editing=target.matches('input,textarea,select'); const note=keyNotes.get(e.key.toLowerCase()); if(note!==undefined&&!e.repeat&&!editing){e.preventDefault();void inputDown(note,94);} else if(!target.matches('input,textarea,select,button,a')&&e.code==='Space'&&!e.repeat){e.preventDefault();if(isRecording)stopRecording();else startRecording();} else if(!target.matches('input,textarea,select,button,a')&&e.key==='Enter'&&!e.repeat){e.preventDefault();if(isPlaying)stopPlayback();else void startPlayback();} });
   window.addEventListener('keyup', e => { const note=keyNotes.get(e.key.toLowerCase()); if(note!==undefined){e.preventDefault();inputUp(note);} });

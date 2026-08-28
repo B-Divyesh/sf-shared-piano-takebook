@@ -31,6 +31,28 @@ test('records, annotates, saves and reopens a take with the keyboard', async ({ 
   await expect(page.getByLabel('Teacher note')).toHaveValue('Keep the second note light.');
 });
 
+test('asks before clearing an unsaved recorded phrase and preserves it when cancelled', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button',{name:'Record'}).click();
+  await page.keyboard.down('a'); await page.waitForTimeout(100); await page.keyboard.up('a');
+  await page.getByRole('button',{name:/Stop recording/}).click();
+  await expect(page.locator('.note-block')).toHaveCount(1);
+  await page.getByRole('button',{name:'Clear notes'}).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole('heading',{name:'Clear recorded notes?'})).toBeVisible();
+  await expect(dialog).toContainText('Clear 1 recorded note from this unsaved phrase?');
+  await expect(page.locator('.note-block')).toHaveCount(1);
+  await expect(page.locator('#cancel-confirm')).toBeFocused();
+  await page.getByRole('button',{name:'Keep notes'}).press('Enter');
+  await expect(dialog).toBeHidden();
+  await expect(page.locator('.note-block')).toHaveCount(1);
+  await page.getByRole('button',{name:'Clear notes'}).click();
+  await page.getByRole('button',{name:'Clear notes'}).last().click();
+  await expect(page.locator('.note-block')).toHaveCount(0);
+  await expect(page.getByRole('status').filter({hasText:'Recorded notes cleared. The take card is unchanged.'})).toBeVisible();
+});
+
 test('installed shell works offline after a first visit', async ({ page, context }) => {
   await page.goto('/');
   await page.waitForFunction(() => navigator.serviceWorker?.ready);
