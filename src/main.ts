@@ -3,7 +3,7 @@ import { PianoSynth } from './audio';
 import { deleteTake, importTakes, loadTakeLibrary, saveTake, type DamagedTake } from './db';
 import { midiBytes, safeFilename, wavBytes } from './exports';
 import { cachedVerdict, captureLicenseFromUrl, getToken, optimisticUnlock, setToken, verifyLicense } from './license';
-import { EMPTY_TAKE, type NoteEvent, type Take } from './types';
+import { EMPTY_TAKE, type Take } from './types';
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
 const synth = new PianoSynth();
@@ -19,8 +19,8 @@ let recordTimer = 0;
 let isPlaying = false;
 let playStarted = 0;
 let playTimer = 0;
-let activeNotes = new Map<number, { start: number; velocity: number }>();
-let heldInputs = new Set<number>();
+const activeNotes = new Map<number, { start: number; velocity: number }>();
+const heldInputs = new Set<number>();
 let midiAccess: MIDIAccess | null = null;
 let teacherUnlocked = optimisticUnlock();
 let deferredInstall: Event | null = null;
@@ -92,7 +92,6 @@ function formatTime(seconds: number): string { const mins = Math.floor(seconds /
 function announce(message: string): void { toastElement.textContent = message; toastElement.classList.add('show'); window.setTimeout(() => toastElement.classList.remove('show'), 2800); }
 
 function buildPiano(): void {
-  const whites = [60,62,64,65,67,69,71,72];
   const blacks = [61,63,66,68,70];
   const keyFor = (note: number) => [...keyNotes].find(([,n]) => n === note)?.[0]?.toUpperCase() ?? '';
   byId('piano').innerHTML = Array.from({length:13},(_,index)=>60+index).map(note => `<button class="key ${blacks.includes(note)?'black':''}" type="button" data-note="${note}" aria-label="${noteNames[note%12]}${Math.floor(note/12)-1}, key ${keyFor(note)}"><span>${keyFor(note)}</span></button>`).join('');
@@ -291,7 +290,7 @@ function wireEvents(): void {
   byId('cancel-delete').addEventListener('click', () => byId<HTMLDialogElement>('confirm-dialog').close());
   byId('confirm-delete').addEventListener('click', async () => { await deleteTake(pendingDelete); if(!deletingDamaged&&current.id===pendingDelete){const next=EMPTY_TAKE();current=next;titleInput.value=next.title;noteInput.value='';tempoInput.value=String(next.tempo);folderInput.value='';timer.value='00:00.0';timer.textContent='00:00.0';renderRoll();} byId<HTMLDialogElement>('confirm-dialog').close(); await refreshLibrary(); announce(deletingDamaged?'Damaged entry removed. Your other takes are unchanged.':'Take deleted from this device.'); });
   byId('verify-license').addEventListener('click', async () => { const token=byId<HTMLInputElement>('license-token').value.trim(); if(!token){announce('Paste your license token first.');return;} setToken(token); byId('license-status').textContent='Checking license…'; try{const verdict=await verifyLicense(true);teacherUnlocked=Boolean(verdict?.valid);updateLicenseUI(teacherUnlocked?'Teacher pack unlocked on this device.':'This license is not active. Check the token or buy a new license.');}catch{updateLicenseUI('Could not verify while offline. Your free takes are unaffected.');} });
-  window.addEventListener('keydown', e => { const target=e.target as HTMLElement; const editing=target.matches('input,textarea,select'); const note=keyNotes.get(e.key.toLowerCase()); if(note!==undefined&&!e.repeat&&!editing){e.preventDefault();void inputDown(note,94);} else if(!target.matches('input,textarea,select,button,a')&&e.code==='Space'&&!e.repeat){e.preventDefault();isRecording?stopRecording():startRecording();} else if(!target.matches('input,textarea,select,button,a')&&e.key==='Enter'&&!e.repeat){e.preventDefault();isPlaying?stopPlayback():void startPlayback();} });
+  window.addEventListener('keydown', e => { const target=e.target as HTMLElement; const editing=target.matches('input,textarea,select'); const note=keyNotes.get(e.key.toLowerCase()); if(note!==undefined&&!e.repeat&&!editing){e.preventDefault();void inputDown(note,94);} else if(!target.matches('input,textarea,select,button,a')&&e.code==='Space'&&!e.repeat){e.preventDefault();if(isRecording)stopRecording();else startRecording();} else if(!target.matches('input,textarea,select,button,a')&&e.key==='Enter'&&!e.repeat){e.preventDefault();if(isPlaying)stopPlayback();else void startPlayback();} });
   window.addEventListener('keyup', e => { const note=keyNotes.get(e.key.toLowerCase()); if(note!==undefined){e.preventDefault();inputUp(note);} });
   window.addEventListener('online', updateConnection); window.addEventListener('offline', updateConnection);
   window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredInstall=e; byId('install').style.display='inline-flex'; });

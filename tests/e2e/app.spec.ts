@@ -35,13 +35,17 @@ test('installed shell works offline after a first visit', async ({ page, context
   await page.goto('/');
   await page.waitForFunction(() => navigator.serviceWorker?.ready);
   await page.reload();
+  expect(await page.evaluate(async()=>await caches.keys())).toContain('takebook-v3');
   await context.setOffline(true);
   await page.reload();
   await expect(page.getByRole('heading',{name:/Keep the take/})).toBeVisible();
   await expect(page.getByText(/Offline · takes available/)).toBeVisible();
+  await page.goto('/privacy/');
+  await expect(page.getByRole('heading',{name:'Your practice stays yours.'})).toBeVisible();
 });
 
 test('announces an installed service-worker update', async ({ page }) => {
+  test.skip(Boolean(process.env.PLAYWRIGHT_BASE_URL),'Synthetic worker-byte update is a local artifact test.');
   const workerPath=resolve('dist/sw.js');
   const original=await readFile(workerPath,'utf8');
   try {
@@ -155,7 +159,8 @@ test('automatic invalid-license reconciliation names the inactive license', asyn
 
 test('an unavailable hosted checkout is disclosed without a broken purchase link', async ({ page }) => {
   const externalRequests:string[]=[];
-  page.on('request',request=>{if(new URL(request.url()).origin!=='http://127.0.0.1:4173')externalRequests.push(request.url());});
+  const appOrigin=new URL(process.env.PLAYWRIGHT_BASE_URL ?? 'http://127.0.0.1:4173').origin;
+  page.on('request',request=>{if(new URL(request.url()).origin!==appOrigin)externalRequests.push(request.url());});
   await page.goto('/');
   await expect(page.getByRole('button',{name:'Purchases temporarily paused'})).toBeDisabled();
   await expect(page.locator('#checkout-status')).toContainText('New checkout is not available yet');
@@ -168,5 +173,5 @@ test('fresh use stays on-origin and legal pages remain tracker-free', async ({ p
   await page.goto('/');
   await page.goto('/privacy/');
   await page.goto('/terms/');
-  expect([...origins]).toEqual(['http://127.0.0.1:4173']);
+  expect([...origins]).toEqual([new URL(process.env.PLAYWRIGHT_BASE_URL ?? 'http://127.0.0.1:4173').origin]);
 });
