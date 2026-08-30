@@ -1,14 +1,4 @@
 {
-  "navigationFallback": {
-    "rewrite": "/index.html",
-    "exclude": [
-      "/assets/*",
-      "/icons/*",
-      "/privacy/*",
-      "/terms/*",
-      "/*.{css,js,png,jpg,svg,avif,webp,ico,woff2,json,txt,xml,webmanifest,wasm,map}"
-    ]
-  },
   "responseOverrides": {
     "404": {
       "rewrite": "/404.html"
