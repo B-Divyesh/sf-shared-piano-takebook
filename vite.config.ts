@@ -14,6 +14,7 @@ export default defineConfig({
         app: resolve(root, 'index.html'),
         privacy: resolve(root, 'privacy/index.html'),
         terms: resolve(root, 'terms/index.html'),
+        notFound: resolve(root, '404.html'),
         offline: resolve(root, 'offline.html')
       }
     }

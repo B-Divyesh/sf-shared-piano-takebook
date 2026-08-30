@@ -1,14 +1,26 @@
 import './style.css';
 import { PianoSynth } from './audio';
-import { deleteTake, importTakes, loadTakeLibrary, saveTake, type DamagedTake } from './db';
+import { deleteTake, importTakes, loadTakeLibrary, replaceTakes, saveTake, type DamagedTake } from './db';
 import { midiBytes, safeFilename, wavBytes } from './exports';
-import { cachedVerdict, captureLicenseFromUrl, checkoutUrl, getToken, LicenseRateLimitError, optimisticUnlock, setToken, verifyLicense } from './license';
+import { cachedVerdict, captureLicenseFromUrl, checkoutUrl, clearLicense, getToken, LicenseRateLimitError, optimisticUnlock, setToken, verifyLicense } from './license';
 import { EMPTY_TAKE, type Take } from './types';
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
 const synth = new PianoSynth();
+const demoMode = new URL(location.href).searchParams.get('demo') === '1';
 const keyNotes = new Map([['a',60],['w',61],['s',62],['e',63],['d',64],['f',65],['t',66],['g',67],['y',68],['h',69],['u',70],['j',71],['k',72]]);
 const noteNames = ['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B'];
+const sampleTakes: Take[] = [
+  { id:'demo-turn', title:'Lighten the turn', teacherNote:'Let the last three notes rise. Keep the left hand quiet.', folder:'Monday studio', tempo:88, createdAt:'2026-08-24T15:00:00.000Z', updatedAt:'2026-08-29T15:00:00.000Z', duration:3.6, loopStart:.8, loopEnd:3.6, notes:[
+    {note:60,velocity:78,start:0,duration:.35},{note:64,velocity:82,start:.5,duration:.35},{note:67,velocity:86,start:1,duration:.4},{note:69,velocity:72,start:1.6,duration:.3},{note:67,velocity:68,start:2,duration:.3},{note:64,velocity:64,start:2.5,duration:.35},{note:60,velocity:70,start:3.1,duration:.5}
+  ]},
+  { id:'demo-cadence', title:'Recital cadence', teacherNote:'Hold the top note through the final chord.', folder:'Recital prep', tempo:72, createdAt:'2026-08-25T16:00:00.000Z', updatedAt:'2026-08-28T16:00:00.000Z', duration:4.2, loopStart:1.2, loopEnd:4.2, notes:[
+    {note:65,velocity:76,start:0,duration:.6},{note:69,velocity:80,start:.8,duration:.6},{note:72,velocity:88,start:1.6,duration:.8},{note:67,velocity:72,start:2.6,duration:.5},{note:71,velocity:78,start:3.2,duration:.9}
+  ]},
+  { id:'demo-staccato', title:'Even staccato', teacherNote:'Match each note length before raising the tempo.', folder:'Technique', tempo:104, createdAt:'2026-08-23T14:00:00.000Z', updatedAt:'2026-08-27T14:00:00.000Z', duration:2.8, loopStart:0, loopEnd:2.8, notes:[
+    {note:60,velocity:70,start:0,duration:.18},{note:62,velocity:72,start:.4,duration:.18},{note:64,velocity:71,start:.8,duration:.18},{note:65,velocity:73,start:1.2,duration:.18},{note:67,velocity:74,start:1.6,duration:.18},{note:69,velocity:75,start:2,duration:.18},{note:71,velocity:76,start:2.4,duration:.18}
+  ]}
+];
 
 let current = EMPTY_TAKE();
 let takes: Take[] = [];
@@ -28,15 +40,17 @@ let deferredInstall: Event | null = null;
 app.innerHTML = `
   <header class="site-head shell">
     <a class="brand" href="/" aria-label="Takebook home"><span>TAKE</span><strong>BOOK</strong></a>
+    <nav class="site-nav" aria-label="Primary"><a href="/?demo=1">Demo</a><a href="#recorder">Recorder</a><a href="/privacy/">Privacy</a></nav>
     <div class="head-actions"><div id="connection" class="connection"><span>Works offline</span></div><button id="install" class="button small install-button" type="button">Install app</button></div>
   </header>
+  ${demoMode ? '<aside class="demo-banner" aria-label="Demo mode"><strong>Demo — sample data, nothing is saved to your takebook</strong><div><button id="reset-demo" class="button small" type="button">Reset demo</button><button id="leave-demo" class="button small ghost" type="button">Start for real</button></div></aside>' : ''}
   <main id="main">
     <section class="hero shell" aria-labelledby="hero-title">
-      <div class="hero-copy"><p class="eyebrow">A pocket notebook for piano phrases</p><h1 id="hero-title">Keep the take. <em>Skip the DAW.</em></h1><p>Record a short phrase together, mark the bit to repeat, and leave a teacher note. Everything stays on this device until you export it.</p><div class="hero-links"><a class="button primary" href="#recorder">Start a take <span aria-hidden="true">↓</span></a><button id="midi-top" class="button ghost" type="button">Connect MIDI piano</button></div></div>
-      <figure class="hero-art"><picture><source type="image/avif" srcset="/assets/takebook-kiosk-960.avif 960w, /assets/takebook-kiosk-1440.avif 1440w" sizes="(max-width:900px) 100vw, 48vw"><source type="image/webp" srcset="/assets/takebook-kiosk-960.webp 960w, /assets/takebook-kiosk-1440.webp 1440w" sizes="(max-width:900px) 100vw, 48vw"><img src="/assets/takebook-kiosk-960.webp" width="960" height="640" alt="An empty night-market piano stall with two stools and a curling roll of saved notes" fetchpriority="high" decoding="async"></picture><figcaption>Two seats. One phrase. No studio.</figcaption></figure>
+      <div class="hero-copy"><p class="eyebrow">A pocket notebook for piano phrases</p><h1 id="hero-title">Record a piano phrase together</h1><p>Teachers and students can loop a short phrase, add one note, and reopen it without a DAW.</p><div class="hero-links"><a class="button primary" href="/?demo=1">Try it with sample data</a><a class="button ghost" href="#recorder">Start a real take <span aria-hidden="true">↓</span></a><button id="midi-top" class="button ghost" type="button">Connect MIDI piano</button></div><p class="action-note">The demo loads three sample takes in separate browser storage.</p><ul class="hero-facts"><li>Takes stay on this device.</li><li>Works offline after the first visit.</li><li>The $9 Teacher pack is optional.</li></ul></div>
+      <figure class="hero-art"><picture><source type="image/avif" srcset="/assets/takebook-kiosk-960.avif 960w, /assets/takebook-kiosk-1440.avif 1440w" sizes="(max-width:900px) 100vw, 48vw"><source type="image/webp" srcset="/assets/takebook-kiosk-960.webp 960w, /assets/takebook-kiosk-1440.webp 1440w" sizes="(max-width:900px) 100vw, 48vw"><img src="/assets/takebook-kiosk-960.webp" width="960" height="640" alt="An empty night-market piano stall with two stools and a curling roll of saved notes" fetchpriority="high" decoding="async"></picture><figcaption>A teacher and student can work at this small practice kiosk.</figcaption></figure>
     </section>
     <section id="recorder" class="desk shell" aria-labelledby="desk-title">
-      <div class="section-heading"><div><p class="eyebrow">Take desk</p><h2 id="desk-title">Catch the phrase while it’s fresh.</h2></div><p>Computer keys A–K · 60 seconds maximum</p></div>
+      <div class="section-heading"><div><p class="eyebrow">Take desk</p><h2 id="desk-title">Record and review the phrase</h2></div><p>Computer keys A–K · 60 seconds maximum</p></div>
       <div class="workbench">
         <div class="panel recorder-panel">
           <div class="panel-head"><h3 class="panel-title">Piano roll</h3><output id="timer" class="timer" aria-label="Recording time">00:00.0</output></div>
@@ -67,9 +81,11 @@ app.innerHTML = `
       </div>
     </section>
     <section class="library shell" aria-labelledby="library-title"><p class="eyebrow">On this device</p><h2 id="library-title">Saved takes</h2><div class="library-tools"><div class="field"><label for="take-filter">Show folder</label><select id="take-filter"><option value="">All takes</option></select></div><div><input id="import-file" class="sr-only" type="file" accept="application/json,.json" aria-label="Choose a Takebook backup file"><button id="import-json" class="button small ghost" type="button">Import backup</button></div></div><ul id="take-list" class="take-list"></ul></section>
+    <section class="how shell" aria-labelledby="how-title"><p class="eyebrow">Three steps</p><h2 id="how-title">How it works</h2><ol><li><h3>Record the phrase</h3><p>Use the on-screen piano, computer keys, or an optional MIDI piano.</p></li><li><h3>Mark the practice loop</h3><p>Set the section to repeat and add one clear teacher note.</p></li><li><h3>Save or export</h3><p>Reopen the take here, or export MIDI, WAV, and JSON files.</p></li></ol></section>
+    <section class="privacy-note shell" aria-labelledby="privacy-title"><p class="eyebrow">Local by default</p><h2 id="privacy-title">Your recording is not uploaded</h2><p>Takes stay in this browser unless you export them. Only optional license verification contacts Sociobot.</p><a href="/privacy/">Read the privacy details</a></section>
     <section id="teacher-pack" class="pack shell" aria-labelledby="pack-title"><div><p class="eyebrow">For a teaching week</p><h2 id="pack-title">Teacher pack</h2><p>Keep a larger takebook tidy without changing the free recorder.</p><ul><li>Group takes into practice folders</li><li>Print a clean practice sheet with the phrase and note</li><li>One-time purchase, yours on licensed devices</li></ul><p class="price">$9 one time</p><a class="button primary" href="${checkoutUrl()}" aria-describedby="checkout-status">Buy Teacher pack for $9</a><p id="checkout-status" class="checkout-status">This is a one-time purchase. Sociobot/Dodo opens the hosted checkout and handles refunds.</p></div><div class="license-box"><h3>Restore a purchase</h3><p id="license-status" class="license-status" role="status">The free recorder is ready. Add a license only for teacher tools.</p><div class="field"><label for="license-token">License token</label><input id="license-token" type="text" inputmode="text" autocomplete="off" spellcheck="false" value="${escapeAttr(getToken())}"></div><div class="editor-actions"><button id="verify-license" class="button" type="button">Verify license</button></div><p><small>Verification contacts Sociobot at most once per day. Sociobot/Dodo is the merchant of record. <a href="/privacy/">Privacy</a> and <a href="/terms/">terms</a> apply.</small></p></div></section>
   </main>
-  <footer class="site-foot"><div class="shell foot-inner"><div>Takebook · Local-first piano practice<br><span class="generated-note">The night-market illustration was generated for this project and reviewed by the maker.</span></div><div><a href="/privacy/">Privacy</a> · <a href="/terms/">Terms</a> · <a href="https://github.com/B-Divyesh/sf-shared-piano-takebook">Source</a></div></div></footer>
+  <footer class="site-foot"><div class="shell foot-inner"><div>Takebook · Local-first piano practice<br><span class="generated-note">The night-market illustration was generated for this project and reviewed by the maker.</span></div><div><a href="/privacy/">Privacy</a> · <a href="/terms/">Terms</a> · <a href="https://github.com/B-Divyesh/sf-shared-piano-takebook">Source on GitHub</a> · Built by Param Factory · v1.0.1</div></div></footer>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <dialog id="confirm-dialog" aria-labelledby="confirm-title" aria-describedby="confirm-copy"><h2 id="confirm-title">Delete this take?</h2><p id="confirm-copy"></p><div class="dialog-actions"><button id="cancel-confirm" class="button" type="button">Keep take</button><button id="confirm-action" class="button danger" type="button">Delete take</button></div></dialog>
 `;
@@ -253,6 +269,20 @@ async function refreshLibrary(): Promise<void> {
   renderLibrary();
 }
 
+async function resetDemo(): Promise<void> {
+  await replaceTakes(structuredClone(sampleTakes));
+  await refreshLibrary();
+  const sample = takes.find(take => take.id === 'demo-turn') ?? takes[0];
+  if (sample) loadIntoEditor(sample);
+  announce('Demo reset to three sample takes.');
+}
+
+async function leaveDemo(): Promise<void> {
+  await replaceTakes([]);
+  clearLicense();
+  location.assign('/');
+}
+
 function refreshFolderFilters(): void {
   const select = byId<HTMLSelectElement>('take-filter'); const selected = select.value;
   const folders = [...new Set(takes.map(t => t.folder).filter(Boolean))];
@@ -417,6 +447,10 @@ function wireEvents(): void {
   window.addEventListener('online', updateConnection); window.addEventListener('offline', updateConnection);
   window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredInstall=e; byId('install').style.display='inline-flex'; });
   byId('install').addEventListener('click', async () => { if(deferredInstall && 'prompt' in deferredInstall) await (deferredInstall as Event & {prompt:()=>Promise<void>}).prompt(); });
+  if (demoMode) {
+    byId('reset-demo').addEventListener('click', () => void resetDemo());
+    byId('leave-demo').addEventListener('click', () => void leaveDemo());
+  }
 }
 
 function updateConnection(): void { const element=byId('connection');element.classList.toggle('offline',!navigator.onLine);element.querySelector('span')!.textContent=navigator.onLine?'Works offline':'Offline · takes available'; }
@@ -429,7 +463,13 @@ async function registerServiceWorker(): Promise<void> {
 async function init(): Promise<void> {
   buildPiano(); wireEvents(); updateConnection(); renderRoll();
   markEditorClean();
-  try { await refreshLibrary(); if(damagedTakes.length) announce(`${damagedTakes.length} damaged saved ${damagedTakes.length===1?'entry was':'entries were'} isolated. Your other takes are available.`); } catch { byId('take-list').innerHTML='<li class="empty-library"><strong>Local storage is unavailable.</strong><br>You can still record and export this session. Check private browsing or storage settings.</li>'; announce('Saved takes could not be opened. Exports still work.'); }
+  if (demoMode) document.title = 'Demo — Takebook';
+  try {
+    await refreshLibrary();
+    if (demoMode && !takes.length && !damagedTakes.length) await resetDemo();
+    else if (demoMode && takes.length) loadIntoEditor(takes[0]!);
+    else if (damagedTakes.length) announce(`${damagedTakes.length} damaged saved ${damagedTakes.length===1?'entry was':'entries were'} isolated. Your other takes are available.`);
+  } catch { byId('take-list').innerHTML='<li class="empty-library"><strong>Local storage is unavailable.</strong><br>You can still record and export this session. Check private browsing or storage settings.</li>'; announce('Saved takes could not be opened. Exports still work.'); }
   const returned=captureLicenseFromUrl(); if(returned) byId<HTMLInputElement>('license-token').value=getToken();
   updateLicenseUI(returned?'Purchase returned. Verifying your license…':undefined);
   if(getToken()){try{const verdict=await verifyLicense();teacherUnlocked=Boolean(verdict?.valid);updateLicenseUI(teacherUnlocked?undefined:'This license is no longer active. Check the token or buy a new license.');}catch(error){const cached=cachedVerdict();teacherUnlocked=Boolean(cached?.valid);updateLicenseUI(error instanceof LicenseRateLimitError?licenseErrorMessage(error):(teacherUnlocked?'Teacher pack available from the last check.':'License check needs a connection; the free recorder is ready.'));}}

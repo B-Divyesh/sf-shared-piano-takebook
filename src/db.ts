@@ -1,11 +1,13 @@
 import type { NoteEvent, Take } from './types';
 
-const DB_NAME = 'takebook';
+const DB_NAME = typeof window !== 'undefined' && new URL(window.location.href).searchParams.get('demo') === '1' ? 'demo:takebook' : 'takebook';
 const STORE = 'takes';
 const MAX_NOTES = 10_000;
 
 export type DamagedTake = { id: string; problem: string };
 export type TakeLibrary = { takes: Take[]; damaged: DamagedTake[] };
+
+export function storageDatabaseName(): string { return DB_NAME; }
 
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -118,7 +120,7 @@ export async function deleteTake(id: string): Promise<void> {
   } finally { db.close(); }
 }
 
-export async function importTakes(value: unknown): Promise<number> {
+function validatedTakeList(value: unknown): Take[] {
   if (!Array.isArray(value)) throw new Error('This backup does not contain a take list.');
   const candidates: Take[] = [];
   const ids = new Set<string>();
@@ -130,11 +132,29 @@ export async function importTakes(value: unknown): Promise<number> {
     ids.add(take.id);
     candidates.push(take);
   }
+  return candidates;
+}
+
+export async function importTakes(value: unknown): Promise<number> {
+  const candidates = validatedTakeList(value);
   if (!candidates.length) return 0;
   const db = await openDb();
   try {
     const transaction = db.transaction(STORE, 'readwrite');
     const store = transaction.objectStore(STORE);
+    for (const take of candidates) store.put(take);
+    await transactionDone(transaction);
+  } finally { db.close(); }
+  return candidates.length;
+}
+
+export async function replaceTakes(value: unknown): Promise<number> {
+  const candidates = validatedTakeList(value);
+  const db = await openDb();
+  try {
+    const transaction = db.transaction(STORE, 'readwrite');
+    const store = transaction.objectStore(STORE);
+    store.clear();
     for (const take of candidates) store.put(take);
     await transactionDone(transaction);
   } finally { db.close(); }

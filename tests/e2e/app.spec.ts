@@ -16,21 +16,76 @@ test.afterEach(async ({ page }, testInfo) => {
   expect(unexpected).toEqual([]);
 });
 
-test('records, annotates, saves and reopens a take with the keyboard', async ({ page }) => {
-  await page.goto('/');
+test('@claim:local-persistence records, annotates, saves and reopens a take with the keyboard', async ({ page }) => {
+  await page.goto('/?demo=1');
   await expect(page.locator('h1')).toHaveCount(1);
-  await page.getByRole('button',{name:'Record'}).click();
+  await page.getByRole('button',{name:/^Record(?: again)?$/}).click();
   await page.keyboard.down('a'); await page.waitForTimeout(100); await page.keyboard.up('a');
   await page.keyboard.down('d'); await page.waitForTimeout(100); await page.keyboard.up('d');
   await page.getByRole('button',{name:/Stop recording/}).click();
   await page.getByLabel('Take name').fill('Friday duet');
   await page.getByLabel('Teacher note').fill('Keep the second note light.');
   await page.getByRole('button',{name:'Save take'}).click();
-  await expect(page.getByText('Friday duet')).toBeVisible();
+  await expect(page.locator('.take-open strong').filter({hasText:'Friday duet'})).toBeVisible();
   await page.reload();
-  await expect(page.getByText('Friday duet')).toBeVisible();
-  await page.getByRole('button',{name:'Open',exact:true}).click();
+  await expect(page.locator('.take-open strong').filter({hasText:'Friday duet'})).toBeVisible();
+  await page.getByRole('button',{name:'Open',exact:true}).first().click();
   await expect(page.getByLabel('Teacher note')).toHaveValue('Keep the second note light.');
+});
+
+test('@claim:demo-sandbox opens three samples in separate storage and discards them on exit', async ({ page }) => {
+  await page.goto('/');
+  await page.evaluate(async () => {
+    const db = await new Promise<IDBDatabase>((resolve,reject) => {
+      const request=indexedDB.open('takebook',1);
+      request.onupgradeneeded=()=>request.result.createObjectStore('takes',{keyPath:'id'});
+      request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);
+    });
+    const transaction=db.transaction('takes','readwrite');
+    transaction.objectStore('takes').put({
+      id:'real-private',title:'Private real take',teacherNote:'Not demo data',folder:'',tempo:96,
+      createdAt:'2026-08-30T00:00:00.000Z',updatedAt:'2026-08-30T00:00:00.000Z',duration:1,loopStart:0,loopEnd:1,
+      notes:[{note:60,velocity:96,start:0,duration:.5}]
+    });
+    await new Promise<void>((resolve,reject)=>{transaction.oncomplete=()=>resolve();transaction.onerror=()=>reject(transaction.error);});
+    db.close();
+  });
+  await page.getByRole('link',{name:'Try it with sample data'}).click();
+  await expect(page).toHaveURL('/?demo=1');
+  await expect(page).toHaveTitle('Demo — Takebook');
+  await expect(page.getByText('Demo — sample data, nothing is saved to your takebook')).toBeVisible();
+  await expect(page.locator('.take-item')).toHaveCount(3);
+  await expect(page.getByText('Private real take')).toHaveCount(0);
+  expect(await page.evaluate(async () => (await indexedDB.databases()).map(database => database.name))).toEqual(expect.arrayContaining(['takebook','demo:takebook']));
+
+  await page.getByLabel('Take name').fill('Changed demo title');
+  await page.getByRole('button',{name:'Save take'}).click();
+  await expect(page.getByText('Changed demo title')).toBeVisible();
+  await page.getByRole('button',{name:'Reset demo'}).click();
+  await expect(page.locator('.take-open strong').filter({hasText:'Lighten the turn'})).toBeVisible();
+  await expect(page.getByText('Changed demo title')).toHaveCount(0);
+
+  await page.getByRole('button',{name:'Start for real'}).click();
+  await expect(page).toHaveURL('/');
+  await expect(page.getByText('Private real take')).toBeVisible();
+  expect(await page.evaluate(async () => {
+    const db=await new Promise<IDBDatabase>((resolve,reject)=>{const request=indexedDB.open('demo:takebook',1);request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});
+    const count=await new Promise<number>((resolve,reject)=>{const request=db.transaction('takes').objectStore('takes').count();request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});
+    db.close();return count;
+  })).toBe(0);
+});
+
+test('@claim:keyboard-fallback records with computer keys when MIDI permission fails', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator,'requestMIDIAccess',{configurable:true,value:()=>Promise.reject(new DOMException('Denied','NotAllowedError'))});
+  });
+  await page.goto('/?demo=1');
+  await page.getByRole('button',{name:'Connect MIDI piano'}).first().click();
+  await expect(page.getByRole('status').filter({hasText:'MIDI permission was not granted. The computer keys still work.'})).toBeVisible();
+  await page.getByRole('button',{name:'Record'}).click();
+  await page.keyboard.down('a'); await page.waitForTimeout(100); await page.keyboard.up('a');
+  await page.getByRole('button',{name:/Stop recording/}).click();
+  await expect(page.locator('.note-block')).toHaveCount(1);
 });
 
 test('asks before clearing an unsaved recorded phrase and preserves it when cancelled', async ({ page }) => {
@@ -100,17 +155,60 @@ test('visibly clamps tempo 0 before saving and persists the shown value', async 
   await expect(page.getByLabel('Tempo')).toHaveValue('30');
 });
 
-test('installed shell works offline after a first visit', async ({ page, context }) => {
-  await page.goto('/');
+test('@claim:offline-reload installed shell works offline after a first visit', async ({ page, context }) => {
+  await page.goto('/?demo=1');
   await page.waitForFunction(() => navigator.serviceWorker?.ready);
   await page.reload();
-  expect(await page.evaluate(async()=>await caches.keys())).toContain('takebook-v3');
+  expect(await page.evaluate(async()=>await caches.keys())).toContain('takebook-v4');
   await context.setOffline(true);
   await page.reload();
-  await expect(page.getByRole('heading',{name:/Keep the take/})).toBeVisible();
+  await expect(page.getByRole('heading',{name:'Record a piano phrase together'})).toBeVisible();
+  await expect(page.locator('.take-open strong').filter({hasText:'Lighten the turn'})).toBeVisible();
   await expect(page.getByText(/Offline · takes available/)).toBeVisible();
   await page.goto('/privacy/');
   await expect(page.getByRole('heading',{name:'Your practice stays yours.'})).toBeVisible();
+});
+
+test('@claim:60-second-limit stops a recording at 60 seconds', async ({ page }) => {
+  await page.clock.install();
+  await page.goto('/?demo=1');
+  await page.getByRole('button',{name:'Record'}).click();
+  await page.clock.runFor(60_100);
+  await expect(page.locator('#timer')).toHaveText('01:00.0');
+  await expect(page.getByRole('status').filter({hasText:'Take stopped at the 60-second limit.'})).toBeVisible();
+  await expect(page.getByRole('button',{name:'Record again'})).toBeVisible();
+});
+
+test('@claim:local-exports @claim:json-import downloads valid exports and imports a backup in the demo', async ({ page }) => {
+  await page.goto('/?demo=1');
+  const midiDownload = page.waitForEvent('download');
+  await page.getByRole('button',{name:'Export MIDI'}).click();
+  const midiPath = await (await midiDownload).path();
+  expect(midiPath).not.toBeNull();
+  expect((await readFile(midiPath!)).subarray(0,4).toString()).toBe('MThd');
+
+  const wavDownload = page.waitForEvent('download');
+  await page.getByRole('button',{name:'Export WAV'}).click();
+  const wavPath = await (await wavDownload).path();
+  expect(wavPath).not.toBeNull();
+  const wav = await readFile(wavPath!);
+  expect(wav.subarray(0,4).toString()).toBe('RIFF');
+  expect(wav.subarray(8,12).toString()).toBe('WAVE');
+
+  const jsonDownload = page.waitForEvent('download');
+  await page.getByRole('button',{name:'Export backup'}).click();
+  const jsonPath = await (await jsonDownload).path();
+  expect(jsonPath).not.toBeNull();
+  expect(JSON.parse(await readFile(jsonPath!,'utf8'))).toHaveLength(3);
+
+  const imported = {
+    id:'demo-imported',title:'Imported scale turn',teacherNote:'Use equal weight.',folder:'Technique',tempo:92,
+    createdAt:'2026-08-30T00:00:00.000Z',updatedAt:'2026-08-30T00:00:00.000Z',duration:1.2,loopStart:0,loopEnd:1.2,
+    notes:[{note:60,velocity:80,start:0,duration:.3},{note:62,velocity:82,start:.5,duration:.3}]
+  };
+  await page.getByLabel('Choose a Takebook backup file').setInputFiles({name:'import.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify([imported]))});
+  await expect(page.getByRole('status').filter({hasText:'Imported 1 take.'})).toBeVisible();
+  await expect(page.locator('.take-open strong').filter({hasText:'Imported scale turn'})).toBeVisible();
 });
 
 test('announces an installed service-worker update', async ({ page }) => {
@@ -129,12 +227,12 @@ test('announces an installed service-worker update', async ({ page }) => {
 });
 
 test('legal pages have semantic essentials', async ({ page }) => {
-  for (const path of ['/privacy/','/terms/']) { await page.goto(path); await expect(page.locator('html')).toHaveAttribute('lang','en'); await expect(page.locator('main')).toHaveCount(1); await expect(page.locator('h1')).toHaveCount(1); }
+  for (const path of ['/privacy/','/terms/','/404.html']) { await page.goto(path); await expect(page.locator('html')).toHaveAttribute('lang','en'); await expect(page.locator('main')).toHaveCount(1); await expect(page.locator('h1')).toHaveCount(1); }
 });
 
 test('has no serious or critical accessibility violations', async ({ page }) => {
   await page.goto('/');
-  for(const path of ['/','/privacy/','/terms/']){
+  for(const path of ['/','/?demo=1','/privacy/','/terms/','/404.html']){
     await page.goto(path);
     const results = await new AxeBuilder({ page }).analyze();
     expect(results.violations.filter(violation => ['serious','critical'].includes(violation.impact ?? ''))).toEqual([]);
@@ -194,7 +292,7 @@ test('isolates and removes a legacy damaged row without hiding valid takes', asy
   await expect(page.getByText('Healthy take')).toBeVisible();
 });
 
-test('390px piano targets meet the touch size and spacing contract', async ({ page }) => {
+test('@claim:mobile-layout 390px piano targets meet the touch size and spacing contract', async ({ page }) => {
   await page.setViewportSize({width:390,height:844});
   await page.goto('/');
   const boxes = await page.locator('.key').evaluateAll(keys => keys.map(key => {
@@ -241,11 +339,29 @@ test('automatic invalid-license reconciliation names the inactive license', asyn
   await expect(page.locator('#license-status')).toContainText('license is no longer active');
 });
 
-test('advertises the enabled $9 live Teacher pack checkout', async ({ page }) => {
+test('@claim:teacher-tools restores a valid checkout license and reuses its daily verdict', async ({ page }) => {
+  let verifies=0;
+  await page.route('https://api.sociobot.in/api/v1/products/shared-piano-takebook/verify?license=paid-token', async route => {
+    verifies++;await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({valid:true,reason:'ok',expires_at:null})});
+  });
+  await page.goto('/?license=paid-token');
+  await expect(page).toHaveURL('/');
+  await expect(page.locator('#license-status')).toContainText('Teacher pack unlocked');
+  await expect(page.getByLabel(/Folder/)).toBeEnabled();
+  await page.evaluate(() => { window.print = () => localStorage.setItem('print-called','yes'); });
+  await page.getByRole('button',{name:'Print practice sheet'}).click();
+  expect(await page.evaluate(() => localStorage.getItem('print-called'))).toBe('yes');
+  expect(await page.evaluate(() => localStorage.getItem('sb_license:shared-piano-takebook'))).toBe('paid-token');
+  await page.reload();
+  expect(verifies).toBe(1);
+  await expect(page.getByLabel(/Folder/)).toBeEnabled();
+});
+
+test('@claim:teacher-pack-price advertises the enabled $9 live Teacher pack checkout', async ({ page }) => {
   const externalRequests:string[]=[];
   const appOrigin=new URL(process.env.PLAYWRIGHT_BASE_URL ?? 'http://127.0.0.1:4173').origin;
   page.on('request',request=>{if(new URL(request.url()).origin!==appOrigin)externalRequests.push(request.url());});
-  await page.goto('/');
+  await page.goto('/?demo=1');
   const checkout=page.getByRole('link',{name:'Buy Teacher pack for $9'});
   await expect(checkout).toHaveAttribute('href','https://api.sociobot.in/api/v1/products/shared-piano-takebook/checkout');
   await expect(page.locator('#checkout-status')).toContainText('one-time purchase');
@@ -263,10 +379,21 @@ test('license restore explains a 429 Retry-After response', async ({ page }) => 
   await expect(page.getByLabel('License token')).toHaveValue('rate-limited-token');
 });
 
-test('fresh use stays on-origin and legal pages remain tracker-free', async ({ page }) => {
+test('@claim:privacy-local fresh use stays on-origin and legal pages remain tracker-free', async ({ page }) => {
   const origins=new Set<string>();
   page.on('request',request=>origins.add(new URL(request.url()).origin));
-  await page.goto('/');
+  await page.goto('/?demo=1');
+  await page.getByRole('button',{name:'Record'}).click();
+  await page.keyboard.down('a'); await page.waitForTimeout(50); await page.keyboard.up('a');
+  await page.getByRole('button',{name:/Stop recording/}).click();
+  await page.getByRole('button',{name:'Save take'}).click();
+  for (const name of ['Export MIDI','Export WAV','Export backup']) {
+    const download=page.waitForEvent('download');
+    await page.getByRole('button',{name}).click();
+    await download;
+  }
+  const imported={id:'privacy-import',title:'Private import',teacherNote:'',folder:'',tempo:96,createdAt:'2026-08-30T00:00:00.000Z',updatedAt:'2026-08-30T00:00:00.000Z',duration:1,loopStart:0,loopEnd:1,notes:[{note:60,velocity:80,start:0,duration:.5}]};
+  await page.getByLabel('Choose a Takebook backup file').setInputFiles({name:'private.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify([imported]))});
   await page.goto('/privacy/');
   await page.goto('/terms/');
   expect([...origins]).toEqual([new URL(process.env.PLAYWRIGHT_BASE_URL ?? 'http://127.0.0.1:4173').origin]);

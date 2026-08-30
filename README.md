@@ -4,6 +4,8 @@ Takebook is a local-first piano practice recorder for a teacher and student work
 
 Live product: <https://shared-piano-takebook.sociobot.in>
 
+Try the isolated sample workspace: <https://shared-piano-takebook.sociobot.in/?demo=1>. It loads three practice takes in a separate `demo:takebook` database. Resetting or leaving the demo clears that sample data without reading or changing real takes.
+
 ## What is included
 
 - Up to 60 seconds of velocity-aware note recording
@@ -33,6 +35,7 @@ Open the printed local URL. For Web MIDI, use a Chromium-based browser and grant
 
 ```sh
 npm run check
+npm run lint
 npm test
 npm run test:e2e
 npm run build

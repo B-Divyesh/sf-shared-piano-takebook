@@ -1,0 +1,79 @@
+[
+  {
+    "id": "demo-sandbox",
+    "claim": "Try Takebook with three sample takes without reading or retaining real take data.",
+    "where": "landing primary action, demo banner, README",
+    "test": "npm run test:e2e -- --grep @claim:demo-sandbox",
+    "sandbox": "fresh browser context; seed one real IndexedDB row; enter ?demo=1; assert separate demo:takebook database, reset, and cleared demo data on exit"
+  },
+  {
+    "id": "local-persistence",
+    "claim": "Saved takes survive reload and reopen on this device.",
+    "where": "landing facts, saved takes, README",
+    "test": "npm run test:e2e -- --grep @claim:local-persistence",
+    "sandbox": "fresh demo context; record with computer keys; annotate; save; reload; reopen; compare note text"
+  },
+  {
+    "id": "offline-reload",
+    "claim": "Works offline after the first visit.",
+    "where": "landing facts, connection status, privacy, README",
+    "test": "npm run test:e2e -- --grep @claim:offline-reload",
+    "sandbox": "fresh demo context; wait for service worker; reload under context.setOffline(true); assert sample take and cached privacy page"
+  },
+  {
+    "id": "60-second-limit",
+    "claim": "A take records for no more than 60 seconds.",
+    "where": "recorder limit label, README",
+    "test": "npm run test:e2e -- --grep @claim:60-second-limit",
+    "sandbox": "fresh demo context with Playwright clock; run recording past 60 seconds; assert 01:00.0 and automatic stop announcement"
+  },
+  {
+    "id": "local-exports",
+    "claim": "Exports standard MIDI, synthesized WAV, and a JSON backup on the device.",
+    "where": "export controls, README",
+    "test": "npm run test:e2e -- --grep @claim:local-exports",
+    "sandbox": "fresh demo context; download all three formats; assert MIDI and WAV signatures and three-record JSON"
+  },
+  {
+    "id": "json-import",
+    "claim": "Imports a valid Takebook JSON backup.",
+    "where": "import control, README",
+    "test": "npm run test:e2e -- --grep @claim:json-import",
+    "sandbox": "fresh demo context; upload a complete valid take; assert success and visible imported record"
+  },
+  {
+    "id": "keyboard-fallback",
+    "claim": "Computer-keyboard recording works when Web MIDI is unavailable or denied.",
+    "where": "recorder help, README",
+    "test": "npm run test:e2e -- --grep @claim:keyboard-fallback",
+    "sandbox": "fresh demo context; reject MIDI permission; assert recovery text; record a note with the A key"
+  },
+  {
+    "id": "mobile-layout",
+    "claim": "The recorder supports a 390 px phone layout with 44 px piano targets.",
+    "where": "README",
+    "test": "npm run test:e2e -- --grep @claim:mobile-layout",
+    "sandbox": "390x844 browser viewport; measure all piano controls, spacing, and document overflow"
+  },
+  {
+    "id": "privacy-local",
+    "claim": "Normal recording, export, import, and legal-page use sends no recordings or tracking data off-site.",
+    "where": "landing facts, privacy, README",
+    "test": "npm run test:e2e -- --grep @claim:privacy-local",
+    "sandbox": "fresh demo context; record all browser requests through app and legal routes; assert product origin only"
+  },
+  {
+    "id": "teacher-tools",
+    "claim": "A valid Teacher pack license enables folders and printable practice sheets.",
+    "where": "Teacher pack, terms, README",
+    "test": "npm run test:e2e -- --grep @claim:teacher-tools",
+    "sandbox": "fresh context with recorded valid Sociobot verification response; assert token storage, URL cleanup, folder enablement, print call, and daily cache"
+  },
+  {
+    "id": "teacher-pack-price",
+    "claim": "The Teacher pack is a $9 one-time purchase through Sociobot/Dodo hosted checkout.",
+    "where": "landing facts, Teacher pack, terms, README",
+    "test": "npm run test:e2e -- --grep @claim:teacher-pack-price",
+    "sandbox": "fresh demo context; assert price disclosure and exact Sociobot checkout endpoint without following it"
+  }
+]

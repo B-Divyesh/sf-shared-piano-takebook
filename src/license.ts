@@ -1,6 +1,7 @@
 const SLUG = 'shared-piano-takebook';
-const TOKEN_KEY = `sb_license:${SLUG}`;
-const VERDICT_KEY = `sb_license_verdict:${SLUG}`;
+const STORAGE_PREFIX = typeof window !== 'undefined' && new URL(window.location.href).searchParams.get('demo') === '1' ? 'demo:' : '';
+const TOKEN_KEY = `${STORAGE_PREFIX}sb_license:${SLUG}`;
+const VERDICT_KEY = `${STORAGE_PREFIX}sb_license_verdict:${SLUG}`;
 const API = 'https://api.sociobot.in/api/v1';
 const DAY = 86_400_000;
 
@@ -40,8 +41,10 @@ export async function verifyLicense(force = false): Promise<LicenseVerdict | nul
   const response = await fetch(`${API}/products/${SLUG}/verify?license=${encodeURIComponent(token)}`);
   if (response.status === 429) {
     const retryAfter = response.headers.get('Retry-After');
-    const seconds = retryAfter === null ? null : Number(retryAfter);
-    throw new LicenseRateLimitError(seconds !== null && Number.isFinite(seconds) && seconds >= 0 ? Math.ceil(seconds) : null);
+    const headerSeconds = retryAfter === null ? null : Number(retryAfter);
+    const bodySeconds = retryAfter === null ? Number((await response.text()).match(/(\d+)s\b/)?.[1]) : Number.NaN;
+    const seconds = headerSeconds !== null && Number.isFinite(headerSeconds) ? headerSeconds : bodySeconds;
+    throw new LicenseRateLimitError(Number.isFinite(seconds) && seconds >= 0 ? Math.ceil(seconds) : null);
   }
   if (!response.ok) throw new Error('License verification is temporarily unavailable.');
   const body = await response.json() as { valid: boolean; reason?: string };

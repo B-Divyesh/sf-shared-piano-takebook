@@ -48,6 +48,8 @@ Prompt sheet (use case `illustration-story`): “Wide editorial cut-paper and go
 
 Provenance: generated for Takebook on 2026-08-28 with the Param Factory Azure image deployment (`factory-image`) using `/opt/fleet/lib/gen-image.sh`; original project asset under the repository MIT license. Generated imagery is disclosed in the footer.
 
+The 1200 × 630 social preview is a center crop of that reviewed original, made on 2026-08-30. The 180 px Apple touch icon is resized from the hand-authored Takebook app icon. No new generated subject matter was added during the repair.
+
 ## Accessibility and responsive intent
 
 The dark treatment is intentional and contrast-checked. Focus is a 3px cyan ring plus offset, not color alone. Each transport icon has a visible text label. The roll has a text summary; range controls have bound labels. At 390px the illustration becomes a shallow banner, secondary explanatory copy is shortened, and the library becomes a vertical list. Nothing required is hover-only and the page supports 200% zoom without fixed overlays.
