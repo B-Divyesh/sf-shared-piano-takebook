@@ -2,7 +2,7 @@ import './style.css';
 import { PianoSynth } from './audio';
 import { deleteTake, importTakes, loadTakeLibrary, saveTake, type DamagedTake } from './db';
 import { midiBytes, safeFilename, wavBytes } from './exports';
-import { cachedVerdict, captureLicenseFromUrl, getToken, optimisticUnlock, setToken, verifyLicense } from './license';
+import { cachedVerdict, captureLicenseFromUrl, checkoutUrl, getToken, LicenseRateLimitError, optimisticUnlock, setToken, verifyLicense } from './license';
 import { EMPTY_TAKE, type Take } from './types';
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
@@ -60,14 +60,14 @@ app.innerHTML = `
           <div class="panel-head"><h3 class="panel-title">Take card</h3><span id="autosave" class="autosave" role="status"></span></div>
           <div class="field"><label for="title">Take name</label><input id="title" maxlength="80" value="Untitled phrase" required autocomplete="off"></div>
           <div class="field"><label for="teacher-note">Teacher note</label><textarea id="teacher-note" maxlength="600" placeholder="Try it lighter at the turn; keep the left hand steady."></textarea><span class="note-count"><span id="note-count">0</span>/600</span></div>
-          <div class="loop-controls"><div class="field"><label for="tempo">Tempo</label><input id="tempo" type="number" min="30" max="240" value="96" inputmode="numeric"><small>Beats per minute</small></div><div class="field"><label for="folder">Folder <span id="folder-tier">· Teacher pack</span></label><input id="folder" list="folder-options" maxlength="60" placeholder="Unfiled" disabled><datalist id="folder-options"><option value="Monday studio"><option value="Recital prep"><option value="Technique"></datalist></div></div>
+          <div class="loop-controls"><div class="field"><label for="tempo">Tempo</label><input id="tempo" type="number" min="30" max="240" step="1" value="96" inputmode="numeric" aria-describedby="tempo-help"><small id="tempo-help">Beats per minute · 30–240</small></div><div class="field"><label for="folder">Folder <span id="folder-tier">· Teacher pack</span></label><input id="folder" list="folder-options" maxlength="60" placeholder="Unfiled" disabled><datalist id="folder-options"><option value="Monday studio"><option value="Recital prep"><option value="Technique"></datalist></div></div>
           <div class="editor-actions"><button class="button primary" type="submit">Save take</button><button id="new-take" class="button" type="button">New take</button><button id="print-sheet" class="button ghost" type="button">Print practice sheet</button></div>
           <div class="export-actions" aria-label="Export this take"><button id="export-midi" class="button small" type="button">Export MIDI</button><button id="export-wav" class="button small" type="button">Export WAV</button><button id="export-json" class="button small ghost" type="button">Export backup</button></div>
         </form>
       </div>
     </section>
     <section class="library shell" aria-labelledby="library-title"><p class="eyebrow">On this device</p><h2 id="library-title">Saved takes</h2><div class="library-tools"><div class="field"><label for="take-filter">Show folder</label><select id="take-filter"><option value="">All takes</option></select></div><div><input id="import-file" class="sr-only" type="file" accept="application/json,.json" aria-label="Choose a Takebook backup file"><button id="import-json" class="button small ghost" type="button">Import backup</button></div></div><ul id="take-list" class="take-list"></ul></section>
-    <section id="teacher-pack" class="pack shell" aria-labelledby="pack-title"><div><p class="eyebrow">For a teaching week</p><h2 id="pack-title">Teacher pack</h2><p>Keep a larger takebook tidy without changing the free recorder.</p><ul><li>Group takes into practice folders</li><li>Print a clean practice sheet with the phrase and note</li><li>One-time purchase, yours on licensed devices</li></ul><p class="price">$9 one time</p><button class="button primary" type="button" disabled aria-describedby="checkout-status">Purchases temporarily paused</button><p id="checkout-status" class="checkout-status" role="status">New checkout is not available yet. Existing licenses can still be restored.</p></div><div class="license-box"><h3>Restore a purchase</h3><p id="license-status" class="license-status" role="status">The free recorder is ready. Add a license only for teacher tools.</p><div class="field"><label for="license-token">License token</label><input id="license-token" type="text" inputmode="text" autocomplete="off" spellcheck="false" value="${escapeAttr(getToken())}"></div><div class="editor-actions"><button id="verify-license" class="button" type="button">Verify license</button></div><p><small>Verification contacts Sociobot at most once per day. Checkout is handled by Sociobot/Dodo, the merchant of record. <a href="/terms/">Terms</a> apply.</small></p></div></section>
+    <section id="teacher-pack" class="pack shell" aria-labelledby="pack-title"><div><p class="eyebrow">For a teaching week</p><h2 id="pack-title">Teacher pack</h2><p>Keep a larger takebook tidy without changing the free recorder.</p><ul><li>Group takes into practice folders</li><li>Print a clean practice sheet with the phrase and note</li><li>One-time purchase, yours on licensed devices</li></ul><p class="price">$9 one time</p><a class="button primary" href="${checkoutUrl()}" aria-describedby="checkout-status">Buy Teacher pack for $9</a><p id="checkout-status" class="checkout-status">This is a one-time purchase. Sociobot/Dodo opens the hosted checkout and handles refunds.</p></div><div class="license-box"><h3>Restore a purchase</h3><p id="license-status" class="license-status" role="status">The free recorder is ready. Add a license only for teacher tools.</p><div class="field"><label for="license-token">License token</label><input id="license-token" type="text" inputmode="text" autocomplete="off" spellcheck="false" value="${escapeAttr(getToken())}"></div><div class="editor-actions"><button id="verify-license" class="button" type="button">Verify license</button></div><p><small>Verification contacts Sociobot at most once per day. Sociobot/Dodo is the merchant of record. <a href="/privacy/">Privacy</a> and <a href="/terms/">terms</a> apply.</small></p></div></section>
   </main>
   <footer class="site-foot"><div class="shell foot-inner"><div>Takebook · Local-first piano practice<br><span class="generated-note">The night-market illustration was generated for this project and reviewed by the maker.</span></div><div><a href="/privacy/">Privacy</a> · <a href="/terms/">Terms</a> · <a href="https://github.com/B-Divyesh/sf-shared-piano-takebook">Source</a></div></div></footer>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
@@ -85,6 +85,7 @@ const folderInput = byId<HTMLInputElement>('folder');
 const loopStartInput = byId<HTMLInputElement>('loop-start');
 const loopEndInput = byId<HTMLInputElement>('loop-end');
 const toastElement = byId('toast');
+let cleanEditorState = '';
 
 function escapeAttr(value: string): string { return value.replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c] ?? c)); }
 function elapsed(): number { return Math.min(60, (performance.now() - recordStarted) / 1000); }
@@ -186,22 +187,51 @@ function renderRoll(): void {
 }
 
 function barAt(seconds: number): string { return (seconds / (240 / current.tempo) + 1).toFixed(1); }
+
+function tempoFromInput(): number {
+  const raw = tempoInput.value.trim();
+  const parsed = raw === '' ? 96 : Number(raw);
+  return Number.isFinite(parsed) ? Math.min(240, Math.max(30, Math.round(parsed))) : 96;
+}
+
+function normalizeTempo(): void {
+  const normalized = tempoFromInput();
+  const raw = tempoInput.value.trim();
+  const wasAdjusted = raw === '' || Number(raw) !== normalized;
+  tempoInput.value = String(normalized);
+  current.tempo = normalized;
+  const help = byId('tempo-help');
+  if (wasAdjusted) {
+    help.textContent = `Changed to ${normalized} BPM. Tempo must be 30–240.`;
+    help.classList.add('field-warning');
+  }
+}
+
 function syncFromForm(): void {
   current.title = titleInput.value.trim() || 'Untitled phrase'; current.teacherNote = noteInput.value.trim();
-  current.tempo = Math.min(240, Math.max(30, Number(tempoInput.value) || 96)); current.folder = teacherUnlocked ? folderInput.value : '';
+  current.tempo = tempoFromInput(); current.folder = teacherUnlocked ? folderInput.value : '';
   byId('note-count').textContent = String(noteInput.value.length);
 }
+
+function editorState(): string {
+  return JSON.stringify({ id:current.id, notes:current.notes, duration:current.duration, loopStart:current.loopStart, loopEnd:current.loopEnd, title:titleInput.value, teacherNote:noteInput.value, tempo:tempoInput.value, folder:folderInput.value });
+}
+
+function markEditorClean(): void { cleanEditorState = editorState(); }
+function hasUnsavedChanges(): boolean { return cleanEditorState !== editorState(); }
 
 function loadIntoEditor(take: Take): void {
   stopPlayback(); if (isRecording) stopRecording(); current = structuredClone(take); titleInput.value = take.title; noteInput.value = take.teacherNote;
   tempoInput.value = String(take.tempo); folderInput.value = take.folder; timer.value = formatTime(take.duration); timer.textContent = formatTime(take.duration); byId('note-count').textContent = String(take.teacherNote.length);
-  renderRoll(); renderLibrary(); byId('recorder').scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); announce(`Opened ${take.title}.`);
+  byId('tempo-help').textContent = 'Beats per minute · 30–240'; byId('tempo-help').classList.remove('field-warning');
+  renderRoll(); renderLibrary(); markEditorClean(); byId('recorder').scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); announce(`Opened ${take.title}.`);
 }
 
 async function persistCurrent(): Promise<void> {
+  normalizeTempo();
   syncFromForm();
   if (!current.notes.length) { announce('Record at least one note before saving.'); return; }
-  current.updatedAt = new Date().toISOString(); await saveTake(current); await refreshLibrary(); byId('autosave').textContent = 'Saved on this device'; announce('Take saved on this device.');
+  current.updatedAt = new Date().toISOString(); await saveTake(current); await refreshLibrary(); markEditorClean(); byId('autosave').textContent = 'Saved on this device'; announce('Take saved on this device.');
 }
 
 function renderLibrary(): void {
@@ -233,7 +263,9 @@ function refreshFolderFilters(): void {
 type Confirmation =
   | { kind: 'delete'; id: string }
   | { kind: 'damaged-delete'; id: string }
-  | { kind: 'clear-notes' };
+  | { kind: 'clear-notes' }
+  | { kind: 'new-take' }
+  | { kind: 'record-again' };
 
 let pendingConfirmation: Confirmation | null = null;
 
@@ -265,6 +297,28 @@ function showClearNotes(): void {
   showConfirmation({ kind: 'clear-notes' }, 'Clear recorded notes?', `Clear ${count} recorded ${count === 1 ? 'note' : 'notes'} from this unsaved phrase? The take card text stays, but these notes cannot be restored.`, 'Keep notes', 'Clear notes');
 }
 
+function recordedNoteCount(): string {
+  const count = current.notes.length;
+  return `${count} recorded ${count === 1 ? 'note' : 'notes'}`;
+}
+
+function startNewTake(): void {
+  loadIntoEditor(EMPTY_TAKE());
+  byId('autosave').textContent = '';
+  announce('New take ready.');
+}
+
+function requestNewTake(): void {
+  if (!hasUnsavedChanges()) { startNewTake(); return; }
+  const detail = current.notes.length ? `${recordedNoteCount()} and unsaved take-card changes will be discarded.` : 'Unsaved take-card changes will be discarded.';
+  showConfirmation({ kind:'new-take' }, 'Start a new take?', detail, 'Keep this phrase', 'Discard and start new');
+}
+
+function requestRecording(): void {
+  if (!current.notes.length || !hasUnsavedChanges()) { startRecording(); return; }
+  showConfirmation({ kind:'record-again' }, 'Record this phrase again?', `${recordedNoteCount()} will be discarded before recording starts.`, 'Keep this phrase', 'Discard and record');
+}
+
 function clearNotes(): void {
   current.notes = [];
   current.duration = 0;
@@ -286,6 +340,15 @@ function updateLicenseUI(message?: string): void {
   status.textContent = message ?? (teacherUnlocked ? 'Teacher pack unlocked on this device.' : 'The free recorder is ready. Add a license only for teacher tools.');
 }
 
+function licenseErrorMessage(error: unknown): string {
+  if (error instanceof LicenseRateLimitError) {
+    return error.retryAfterSeconds === null
+      ? 'Too many license checks. Wait a moment, then try again.'
+      : `Too many license checks. Try again in ${error.retryAfterSeconds} ${error.retryAfterSeconds === 1 ? 'second' : 'seconds'}.`;
+  }
+  return 'Could not verify while offline. Your free takes are unaffected.';
+}
+
 async function connectMidi(): Promise<void> {
   if (!navigator.requestMIDIAccess) { announce('Web MIDI is not available here. The computer keys still work.'); return; }
   try {
@@ -302,15 +365,16 @@ function handleMidi(event: MIDIMessageEvent): void {
 }
 
 function wireEvents(): void {
-  recordButton.addEventListener('click', () => isRecording ? stopRecording() : startRecording());
+  recordButton.addEventListener('click', () => isRecording ? stopRecording() : requestRecording());
   playButton.addEventListener('click', () => isPlaying ? stopPlayback() : void startPlayback());
   byId('clear').addEventListener('click', showClearNotes);
   [byId('midi'),byId('midi-top')].forEach(button => button.addEventListener('click', () => void connectMidi()));
   loopStartInput.addEventListener('input', () => { current.loopStart = Math.min(Number(loopStartInput.value), current.loopEnd - .2); renderRoll(); });
   loopEndInput.addEventListener('input', () => { current.loopEnd = Math.max(Number(loopEndInput.value), current.loopStart + .2); renderRoll(); });
-  tempoInput.addEventListener('input', () => { syncFromForm(); renderRoll(); }); noteInput.addEventListener('input', syncFromForm);
+  tempoInput.addEventListener('input', () => { syncFromForm(); byId('tempo-help').textContent='Beats per minute · 30–240'; byId('tempo-help').classList.remove('field-warning'); renderRoll(); });
+  tempoInput.addEventListener('change', () => { normalizeTempo(); renderRoll(); }); noteInput.addEventListener('input', syncFromForm);
   byId<HTMLFormElement>('take-form').addEventListener('submit', e => { e.preventDefault(); void persistCurrent(); });
-  byId('new-take').addEventListener('click', () => { loadIntoEditor(EMPTY_TAKE()); byId('autosave').textContent=''; });
+  byId('new-take').addEventListener('click', requestNewTake);
   byId('export-midi').addEventListener('click', () => { syncFromForm(); if (!current.notes.length) return announce('Record or open a take before exporting.'); const bytes=midiBytes(current); download(bytes.buffer as ArrayBuffer, 'audio/midi', `${safeFilename(current.title)}.mid`); announce('MIDI exported.'); });
   byId('export-wav').addEventListener('click', () => { syncFromForm(); if (!current.notes.length) return announce('Record or open a take before exporting.'); download(wavBytes(current), 'audio/wav', `${safeFilename(current.title)}.wav`); announce('WAV rendered on this device.'); });
   byId('export-json').addEventListener('click', () => { download(JSON.stringify(takes, null, 2), 'application/json', `takebook-backup-${new Date().toISOString().slice(0,10)}.json`); announce('Takebook backup exported.'); });
@@ -329,6 +393,16 @@ function wireEvents(): void {
       clearNotes();
       return;
     }
+    if (confirmation.kind === 'new-take') {
+      byId<HTMLDialogElement>('confirm-dialog').close();
+      startNewTake();
+      return;
+    }
+    if (confirmation.kind === 'record-again') {
+      byId<HTMLDialogElement>('confirm-dialog').close();
+      startRecording();
+      return;
+    }
     await deleteTake(confirmation.id);
     if (confirmation.kind === 'delete' && current.id === confirmation.id) {
       const next = EMPTY_TAKE(); current = next; titleInput.value = next.title; noteInput.value = ''; tempoInput.value = String(next.tempo); folderInput.value = ''; timer.value = '00:00.0'; timer.textContent = '00:00.0'; renderRoll();
@@ -337,8 +411,8 @@ function wireEvents(): void {
     await refreshLibrary();
     announce(confirmation.kind === 'damaged-delete' ? 'Damaged entry removed. Your other takes are unchanged.' : 'Take deleted from this device.');
   });
-  byId('verify-license').addEventListener('click', async () => { const token=byId<HTMLInputElement>('license-token').value.trim(); if(!token){announce('Paste your license token first.');return;} setToken(token); byId('license-status').textContent='Checking license…'; try{const verdict=await verifyLicense(true);teacherUnlocked=Boolean(verdict?.valid);updateLicenseUI(teacherUnlocked?'Teacher pack unlocked on this device.':'This license is not active. Check the token; new purchases are temporarily paused.');}catch{updateLicenseUI('Could not verify while offline. Your free takes are unaffected.');} });
-  window.addEventListener('keydown', e => { const target=e.target as HTMLElement; const editing=target.matches('input,textarea,select'); const note=keyNotes.get(e.key.toLowerCase()); if(note!==undefined&&!e.repeat&&!editing){e.preventDefault();void inputDown(note,94);} else if(!target.matches('input,textarea,select,button,a')&&e.code==='Space'&&!e.repeat){e.preventDefault();if(isRecording)stopRecording();else startRecording();} else if(!target.matches('input,textarea,select,button,a')&&e.key==='Enter'&&!e.repeat){e.preventDefault();if(isPlaying)stopPlayback();else void startPlayback();} });
+  byId('verify-license').addEventListener('click', async () => { const token=byId<HTMLInputElement>('license-token').value.trim(); if(!token){announce('Paste your license token first.');return;} setToken(token); byId('license-status').textContent='Checking license…'; try{const verdict=await verifyLicense(true);teacherUnlocked=Boolean(verdict?.valid);updateLicenseUI(teacherUnlocked?'Teacher pack unlocked on this device.':'This license is not active. Check the token or buy a new license.');}catch(error){updateLicenseUI(licenseErrorMessage(error));} });
+  window.addEventListener('keydown', e => { const target=e.target as HTMLElement; const editing=target.matches('input,textarea,select'); const note=keyNotes.get(e.key.toLowerCase()); if(note!==undefined&&!e.repeat&&!editing){e.preventDefault();void inputDown(note,94);} else if(!target.matches('input,textarea,select,button,a')&&e.code==='Space'&&!e.repeat){e.preventDefault();if(isRecording)stopRecording();else requestRecording();} else if(!target.matches('input,textarea,select,button,a')&&e.key==='Enter'&&!e.repeat){e.preventDefault();if(isPlaying)stopPlayback();else void startPlayback();} });
   window.addEventListener('keyup', e => { const note=keyNotes.get(e.key.toLowerCase()); if(note!==undefined){e.preventDefault();inputUp(note);} });
   window.addEventListener('online', updateConnection); window.addEventListener('offline', updateConnection);
   window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredInstall=e; byId('install').style.display='inline-flex'; });
@@ -354,10 +428,11 @@ async function registerServiceWorker(): Promise<void> {
 
 async function init(): Promise<void> {
   buildPiano(); wireEvents(); updateConnection(); renderRoll();
+  markEditorClean();
   try { await refreshLibrary(); if(damagedTakes.length) announce(`${damagedTakes.length} damaged saved ${damagedTakes.length===1?'entry was':'entries were'} isolated. Your other takes are available.`); } catch { byId('take-list').innerHTML='<li class="empty-library"><strong>Local storage is unavailable.</strong><br>You can still record and export this session. Check private browsing or storage settings.</li>'; announce('Saved takes could not be opened. Exports still work.'); }
   const returned=captureLicenseFromUrl(); if(returned) byId<HTMLInputElement>('license-token').value=getToken();
   updateLicenseUI(returned?'Purchase returned. Verifying your license…':undefined);
-  if(getToken()){try{const verdict=await verifyLicense();teacherUnlocked=Boolean(verdict?.valid);updateLicenseUI(teacherUnlocked?undefined:'This license is no longer active. Check the token; new purchases are temporarily paused.');}catch{const cached=cachedVerdict();teacherUnlocked=Boolean(cached?.valid);updateLicenseUI(teacherUnlocked?'Teacher pack available from the last check.':'License check needs a connection; the free recorder is ready.');}}
+  if(getToken()){try{const verdict=await verifyLicense();teacherUnlocked=Boolean(verdict?.valid);updateLicenseUI(teacherUnlocked?undefined:'This license is no longer active. Check the token or buy a new license.');}catch(error){const cached=cachedVerdict();teacherUnlocked=Boolean(cached?.valid);updateLicenseUI(error instanceof LicenseRateLimitError?licenseErrorMessage(error):(teacherUnlocked?'Teacher pack available from the last check.':'License check needs a connection; the free recorder is ready.'));}}
   void registerServiceWorker();
 }
 

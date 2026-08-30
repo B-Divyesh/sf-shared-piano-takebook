@@ -6,6 +6,13 @@ const DAY = 86_400_000;
 
 export type LicenseVerdict = { valid: boolean; checkedAt: number; reason?: string };
 
+export class LicenseRateLimitError extends Error {
+  constructor(readonly retryAfterSeconds: number | null) {
+    super('License verification rate limit reached.');
+    this.name = 'LicenseRateLimitError';
+  }
+}
+
 export function captureLicenseFromUrl(): boolean {
   const url = new URL(location.href);
   const token = url.searchParams.get('license');
@@ -31,6 +38,11 @@ export async function verifyLicense(force = false): Promise<LicenseVerdict | nul
   const cached = cachedVerdict();
   if (!force && cached && Date.now() - cached.checkedAt < DAY) return cached;
   const response = await fetch(`${API}/products/${SLUG}/verify?license=${encodeURIComponent(token)}`);
+  if (response.status === 429) {
+    const retryAfter = response.headers.get('Retry-After');
+    const seconds = retryAfter === null ? null : Number(retryAfter);
+    throw new LicenseRateLimitError(seconds !== null && Number.isFinite(seconds) && seconds >= 0 ? Math.ceil(seconds) : null);
+  }
   if (!response.ok) throw new Error('License verification is temporarily unavailable.');
   const body = await response.json() as { valid: boolean; reason?: string };
   const verdict = { valid: body.valid, reason: body.reason, checkedAt: Date.now() };

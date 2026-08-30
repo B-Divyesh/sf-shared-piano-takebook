@@ -10,8 +10,10 @@ test.beforeEach(async ({ page }) => {
   (page as typeof page & { __consoleErrors?: string[] }).__consoleErrors = errors;
 });
 
-test.afterEach(async ({ page }) => {
-  expect((page as typeof page & { __consoleErrors?: string[] }).__consoleErrors ?? []).toEqual([]);
+test.afterEach(async ({ page }, testInfo) => {
+  const errors = (page as typeof page & { __consoleErrors?: string[] }).__consoleErrors ?? [];
+  const unexpected = testInfo.title.includes('429 Retry-After') ? errors.filter(error => !/status of 429/.test(error)) : errors;
+  expect(unexpected).toEqual([]);
 });
 
 test('records, annotates, saves and reopens a take with the keyboard', async ({ page }) => {
@@ -51,6 +53,51 @@ test('asks before clearing an unsaved recorded phrase and preserves it when canc
   await page.getByRole('button',{name:'Clear notes'}).last().click();
   await expect(page.locator('.note-block')).toHaveCount(0);
   await expect(page.getByRole('status').filter({hasText:'Recorded notes cleared. The take card is unchanged.'})).toBeVisible();
+});
+
+test('asks before New take or Record again discards an unsaved phrase', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button',{name:'Record'}).click();
+  await page.keyboard.down('a'); await page.waitForTimeout(100); await page.keyboard.up('a');
+  await page.getByRole('button',{name:/Stop recording/}).click();
+  await page.getByLabel('Take name').fill('Unsaved lesson phrase');
+
+  await page.getByRole('button',{name:'New take'}).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole('heading',{name:'Start a new take?'})).toBeVisible();
+  await expect(dialog).toContainText('1 recorded note');
+  await expect(page.locator('#cancel-confirm')).toBeFocused();
+  await page.getByRole('button',{name:'Keep this phrase'}).click();
+  await expect(page.locator('.note-block')).toHaveCount(1);
+  await expect(page.getByLabel('Take name')).toHaveValue('Unsaved lesson phrase');
+
+  await page.getByRole('button',{name:'Record again'}).click();
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole('heading',{name:'Record this phrase again?'})).toBeVisible();
+  await expect(dialog).toContainText('1 recorded note');
+  await page.getByRole('button',{name:'Keep this phrase'}).click();
+  await expect(page.locator('.note-block')).toHaveCount(1);
+
+  await page.getByRole('button',{name:'Record again'}).click();
+  await page.getByRole('button',{name:'Discard and record'}).click();
+  await expect(dialog).toBeHidden();
+  await expect(page.locator('.note-block')).toHaveCount(0);
+  await expect(page.getByRole('button',{name:'Stop recording'})).toBeVisible();
+});
+
+test('visibly clamps tempo 0 before saving and persists the shown value', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button',{name:'Record'}).click();
+  await page.keyboard.down('a'); await page.waitForTimeout(100); await page.keyboard.up('a');
+  await page.getByRole('button',{name:/Stop recording/}).click();
+  await page.getByLabel('Tempo').fill('0');
+  await page.getByRole('button',{name:'Save take'}).click();
+  await expect(page.getByLabel('Tempo')).toHaveValue('30');
+  await expect(page.locator('#tempo-help')).toContainText('Changed to 30 BPM');
+  await page.reload();
+  await page.getByRole('button',{name:'Open',exact:true}).click();
+  await expect(page.getByLabel('Tempo')).toHaveValue('30');
 });
 
 test('installed shell works offline after a first visit', async ({ page, context }) => {
@@ -194,14 +241,26 @@ test('automatic invalid-license reconciliation names the inactive license', asyn
   await expect(page.locator('#license-status')).toContainText('license is no longer active');
 });
 
-test('an unavailable hosted checkout is disclosed without a broken purchase link', async ({ page }) => {
+test('advertises the enabled $9 live Teacher pack checkout', async ({ page }) => {
   const externalRequests:string[]=[];
   const appOrigin=new URL(process.env.PLAYWRIGHT_BASE_URL ?? 'http://127.0.0.1:4173').origin;
   page.on('request',request=>{if(new URL(request.url()).origin!==appOrigin)externalRequests.push(request.url());});
   await page.goto('/');
-  await expect(page.getByRole('button',{name:'Purchases temporarily paused'})).toBeDisabled();
-  await expect(page.locator('#checkout-status')).toContainText('New checkout is not available yet');
+  const checkout=page.getByRole('link',{name:'Buy Teacher pack for $9'});
+  await expect(checkout).toHaveAttribute('href','https://api.sociobot.in/api/v1/products/shared-piano-takebook/checkout');
+  await expect(page.locator('#checkout-status')).toContainText('one-time purchase');
   expect(externalRequests).toEqual([]);
+});
+
+test('license restore explains a 429 Retry-After response', async ({ page }) => {
+  await page.route('https://api.sociobot.in/api/v1/products/shared-piano-takebook/verify?license=rate-limited-token', async route => {
+    await route.fulfill({status:429,headers:{'Retry-After':'7','Access-Control-Expose-Headers':'Retry-After'},contentType:'text/plain',body:'Too Many Requests! Wait for 7s'});
+  });
+  await page.goto('/');
+  await page.getByLabel('License token').fill('rate-limited-token');
+  await page.getByRole('button',{name:'Verify license'}).click();
+  await expect(page.locator('#license-status')).toContainText('Try again in 7 seconds');
+  await expect(page.getByLabel('License token')).toHaveValue('rate-limited-token');
 });
 
 test('fresh use stays on-origin and legal pages remain tracker-free', async ({ page }) => {
