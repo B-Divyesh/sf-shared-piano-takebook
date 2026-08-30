@@ -55,6 +55,7 @@ test('@claim:demo-sandbox opens three samples in separate storage and discards t
   await expect(page).toHaveTitle('Demo — Takebook');
   await expect(page.getByText('Demo — sample data, nothing is saved to your takebook')).toBeVisible();
   await expect(page.locator('.take-item')).toHaveCount(3);
+  await expect(page.locator('#empty-roll')).toBeHidden();
   await expect(page.getByText('Private real take')).toHaveCount(0);
   expect(await page.evaluate(async () => (await indexedDB.databases()).map(database => database.name))).toEqual(expect.arrayContaining(['takebook','demo:takebook']));
 
@@ -306,6 +307,7 @@ test('@claim:mobile-layout 390px piano targets meet the touch size and spacing c
     const vertical=Math.max(0,Math.max(firstBox.top,secondBox.top)-Math.min(firstBox.bottom,secondBox.bottom));
     expect(Math.max(horizontal,vertical)).toBeGreaterThanOrEqual(7.9);
   }
+  await expect(page.locator('#install')).toBeHidden();
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth-document.documentElement.clientWidth);
   expect(overflow).toBe(0);
 });
@@ -370,7 +372,7 @@ test('@claim:teacher-pack-price advertises the enabled $9 live Teacher pack chec
 
 test('license restore explains a 429 Retry-After response', async ({ page }) => {
   await page.route('https://api.sociobot.in/api/v1/products/shared-piano-takebook/verify?license=rate-limited-token', async route => {
-    await route.fulfill({status:429,headers:{'Retry-After':'7','Access-Control-Expose-Headers':'Retry-After'},contentType:'text/plain',body:'Too Many Requests! Wait for 7s'});
+    await route.fulfill({status:429,headers:{'Retry-After':'7'},contentType:'text/plain',body:'Too Many Requests! Wait for 7s'});
   });
   await page.goto('/');
   await page.getByLabel('License token').fill('rate-limited-token');
